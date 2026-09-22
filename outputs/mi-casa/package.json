@@ -1,0 +1,16 @@
+{
+  "name": "superlist",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SuperList PWA with Capacitor",
+  "scripts": {
+    "build": "echo \"No build script needed for static site\"",
+    "start": "echo \"No dev server configured\""
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/cli": "^6.0.0"
+  },
+  "devDependencies": {}
+}
+

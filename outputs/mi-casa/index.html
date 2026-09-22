@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SuperList</title>
+    <link rel="icon" type="image/png" href="./LOGO TRANSPARENTE.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&family=Reddit+Sans:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <button class="brand" id="brand-button" type="button" aria-label="Volver al inicio">
+          <img class="brand-mark" src="./LOGO TRANSPARENTE.png" alt="Logo de Mis Compras" />
+          <div>
+            <p class="eyebrow">Despensa personal</p>
+            <h1>Mis compras</h1>
+          </div>
+        </button>
+        <div class="top-actions">
+          <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir menú" aria-expanded="false">
+            <span></span>
+            <span></span>
+            <span></span>
+          </button>
+          <div id="group-switcher" aria-live="polite"></div>
+        </div>
+      </header>
+
+      <aside class="side-menu" id="side-menu" aria-hidden="true">
+        <div class="side-menu-header">
+          <span>Menú</span>
+          <button class="ghost-icon menu-close" id="menu-close" type="button" aria-label="Cerrar menú">×</button>
+        </div>
+        <button class="side-menu-item" type="button" data-menu-action="home">Inicio</button>
+        <button class="side-menu-item" type="button" data-menu-action="account">Mi cuenta</button>
+        <button class="side-menu-item" type="button" data-menu-action="lists">Mis listas</button>
+        <button class="side-menu-item danger" type="button" data-menu-action="logout">Cerrar sesión</button>
+      </aside>
+      <div class="menu-backdrop" id="menu-backdrop" hidden></div>
+
+      <main id="app" class="content" aria-live="polite"></main>
+
+    </div>
+
+    <div class="status-overlay" id="status-overlay" hidden>
+      <div class="status-overlay-backdrop" id="status-overlay-backdrop"></div>
+      <section class="status-overlay-panel" role="dialog" aria-modal="true" aria-labelledby="status-overlay-title">
+        <div class="status-overlay-header">
+          <div>
+            <p class="eyebrow">Estado</p>
+            <h2 id="status-overlay-title">Productos</h2>
+          </div>
+          <button class="ghost-icon" id="status-overlay-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+        <div class="status-overlay-body" id="status-overlay-body"></div>
+      </section>
+    </div>
+
+    <dialog id="product-dialog" class="dialog">
+      <form id="product-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Producto</p>
+            <h2 id="dialog-title">Agregar rápido</h2>
+          </div>
+          <button class="ghost-icon" id="close-dialog" type="button" aria-label="Cerrar">×</button>
+        </div>
+
+        <input type="hidden" name="id" />
+        <label class="field">
+          <span>Nombre</span>
+          <input name="name" autocomplete="off" placeholder="Leche" required />
+        </label>
+
+        <fieldset class="state-picker">
+          <legend>Estado</legend>
+          <label class="state-option tengo"><input type="radio" name="status" value="tengo" checked /><span>Tengo</span></label>
+          <label class="state-option agotarse"><input type="radio" name="status" value="agotarse" /><span>Por agotarse</span></label>
+          <label class="state-option falta"><input type="radio" name="status" value="falta" /><span>En falta</span></label>
+          <label class="state-option quiero"><input type="radio" name="status" value="quiero" /><span>Quiero</span></label>
+        </fieldset>
+
+        <button class="optional-toggle" id="optional-toggle" type="button" aria-expanded="false">
+          OPCIONAL <span class="optional-chevron">▾</span>
+        </button>
+
+        <div class="optional-fields" id="optional-fields" hidden>
+          <div class="field-grid">
+            <label class="field">
+              <span>Cantidad</span>
+              <input name="quantity" inputmode="decimal" placeholder="1" />
+            </label>
+            <label class="field">
+              <span>Unidad</span>
+              <input name="unit" placeholder="litro, g, paquete" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Categoría</span>
+            <input name="category" list="category-list" placeholder="Lácteos" />
+            <datalist id="category-list"></datalist>
+          </label>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>Marca</span>
+              <input name="brand" placeholder="Opcional" />
+            </label>
+            <label class="field">
+              <span>Vence</span>
+              <input name="expiry" type="date" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Reservado o planificado para</span>
+            <input name="plannedFor" placeholder="Pizza del sábado" />
+          </label>
+
+          <label class="field">
+            <span>Nota</span>
+            <textarea name="note" rows="3" placeholder="Dato útil, preferencia o recordatorio"></textarea>
+          </label>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="danger-button" id="delete-product" type="button">Eliminar</button>
+          <button class="secondary-button" type="button" id="mark-bought-form">Comprado</button>
+          <button class="primary-button" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="edit-group-dialog" class="dialog">
+      <form id="edit-group-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Editar lista</p>
+            <h2 id="edit-group-title">Editar lista</h2>
+          </div>
+          <button class="ghost-icon" id="edit-group-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+
+        <input type="hidden" name="id" />
+        <label class="field">
+          <span>Nombre</span>
+          <input name="name" required />
+        </label>
+        <label class="field emoji-field">
+          <span>Emoji</span>
+          <input name="emoji" class="emoji-input" maxlength="2" placeholder="🏠" />
+        </label>
+
+        <div class="dialog-actions">
+          <button class="secondary-button" id="edit-group-cancel" type="button">Cancelar</button>
+          <button class="primary-button" id="edit-group-save" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="edit-profile-dialog" class="dialog">
+      <form id="edit-profile-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Perfil</p>
+            <h2>Editar mi perfil</h2>
+          </div>
+          <button class="ghost-icon" id="edit-profile-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+
+        <label class="field">
+          <span>Nombre</span>
+          <input name="name" required />
+        </label>
+        <label class="field">
+          <span>Fecha de nacimiento</span>
+          <input name="birthdate" type="date" />
+        </label>
+
+        <div class="dialog-actions">
+          <button class="secondary-button" id="edit-profile-cancel" type="button">Cancelar</button>
+          <button class="primary-button" id="edit-profile-save" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="change-password-dialog" class="dialog">
+      <form id="change-password-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Seguridad</p>
+            <h2>Cambiar contraseña</h2>
+          </div>
+          <button class="ghost-icon" id="change-password-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+
+        <label class="field">
+          <span>Contraseña actual</span>
+          <div class="password-row">
+            <input name="currentPassword" type="password" placeholder="Ingresá tu contraseña actual" required />
+            <button class="password-toggle is-hidden" type="button" data-password-toggle aria-label="Mostrar contraseña" title="Mostrar contraseña">
+              <svg class="password-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M2 12s3.8-6 10-6 10 6 10 6-3.8 6-10 6S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+              </svg>
+            </button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Nueva contraseña</span>
+          <div class="password-row">
+            <input name="newPassword" type="password" placeholder="Al menos 6 caracteres" required />
+            <button class="password-toggle is-hidden" type="button" data-password-toggle aria-label="Mostrar contraseña" title="Mostrar contraseña">
+              <svg class="password-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M2 12s3.8-6 10-6 10 6 10 6-3.8 6-10 6S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+              </svg>
+            </button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>Confirmar nueva contraseña</span>
+          <div class="password-row">
+            <input name="confirmPassword" type="password" placeholder="Repetí la nueva contraseña" required />
+            <button class="password-toggle is-hidden" type="button" data-password-toggle aria-label="Mostrar contraseña" title="Mostrar contraseña">
+              <svg class="password-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M2 12s3.8-6 10-6 10 6 10 6-3.8 6-10 6S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+              </svg>
+            </button>
+          </div>
+        </label>
+
+        <p class="form-message" id="change-password-message"></p>
+
+        <div class="dialog-actions">
+          <button class="secondary-button" id="change-password-cancel" type="button">Cancelar</button>
+          <button class="primary-button" id="change-password-save" type="submit">Guardar contraseña</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="join-dialog" class="dialog">
+      <form id="join-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Unirse</p>
+            <h2 id="join-dialog-title">Unirse a una lista compartida</h2>
+          </div>
+          <button class="ghost-icon" id="join-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+
+        <label class="field">
+          <span>Código de invitación</span>
+          <input name="code" placeholder="ABCD-EFGH" required />
+        </label>
+        <p class="form-message" id="join-message"></p>
+
+        <div class="dialog-actions">
+          <button class="secondary-button" id="join-cancel" type="button">Cancelar</button>
+          <button class="primary-button" id="join-submit" type="submit">Unirse</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="confirm-dialog" class="dialog">
+      <form id="confirm-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">Confirmación</p>
+            <h2 id="confirm-dialog-title">Borrar lista</h2>
+          </div>
+          <button class="ghost-icon" id="confirm-close" type="button" aria-label="Cerrar">×</button>
+        </div>
+        <div class="field">
+          <p id="confirm-dialog-message">¿Estás seguro/a?</p>
+        </div>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="confirm-cancel" type="button">Cancelar</button>
+          <button class="danger-button" id="confirm-delete" type="button">Borrar lista</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app.js?v=5"></script>
+  </body>
+</html>
