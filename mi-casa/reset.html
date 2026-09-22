@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Limpiar SuperList</title>
+  </head>
+  <body>
+    <script>
+      localStorage.removeItem("superlist-state-v2");
+      localStorage.removeItem("superlist-session-v2");
+      localStorage.removeItem("mi-casa-state-v2");
+      localStorage.removeItem("mi-casa-session-v2");
+      location.replace("./index.html");
+    </script>
+  </body>
+</html>
