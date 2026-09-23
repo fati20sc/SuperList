@@ -25,7 +25,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Prepare web assets
         working-directory: mi-casa
@@ -46,10 +46,12 @@ jobs:
       - name: Apply custom transparent icons
         working-directory: mi-casa
         run: |
+          # Remove anydpi-v26 XMLs so Android uses pure transparent PNG icons without white borders
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
           for dir in android/app/src/main/res/mipmap-*; do
             if [ -d "$dir" ]; then
-              cp logo-512.png "$dir/ic_launcher.png" 2>/dev/null || true
-              cp logo-512.png "$dir/ic_launcher_round.png" 2>/dev/null || true
+              cp logo-512.png "$dir/ic_launcher.png"
+              cp logo-512.png "$dir/ic_launcher_round.png"
               cp logo-512.png "$dir/ic_launcher_foreground.png" 2>/dev/null || true
             fi
           done
@@ -72,7 +74,6 @@ jobs:
 
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
-        if: always()
         with:
           tag_name: latest
           name: "SuperList App"
