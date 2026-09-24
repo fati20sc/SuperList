@@ -1,4 +1,120 @@
-:root {
+/* Layout fixes */
+html, body {
+  overflow-x: hidden; /* prevent horizontal scroll */
+}
+/* Original CSS – layout fixes removed */
+
+/* Login form container – restore original size */
+.login-form {
+  max-width: 420px;
+  margin: 2rem auto;
+  width: 100%;
+}
+.login-form input,
+.login-form button {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* List header alignment */
+.list-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.list-detail-emoji {
+  font-size: 2rem;
+  vertical-align: middle;
+}
+
+
+  --sage: #789b72;
+  --sage-soft: #e5eddc;
+  --cream: #f8f5ee;
+  --paper: #fffaf0;
+  --ink: #3f584c;
+  --muted: #697367;
+  --line: #e7dfd0;
+  --tomato: #d96c5f;
+  --mustard: #d6a84f;
+  --violet: #a98dbc;
+  --blue: #6f94a6;
+  --shadow: 0 14px 40px rgba(48, 62, 51, 0.08);
+  --font-body: "Reddit Sans", "Segoe UI", sans-serif;
+  --font-heading: "Montserrat", "Segoe UI", sans-serif;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--cream);
+}
+
+/* Auth notice */
+.auth-notice-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #e6f4ea;
+  color: #0b3d20;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  transition: opacity 0.3s;
+}
+.auth-notice-card.hidden { opacity: 0; pointer-events: none; }
+.auth-notice-card.show   { opacity: 1; }
+.auth-notice-close {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+/* Notification badge */
+.notif-badge {
+  background:#d93025; color:#fff; border-radius:50%; padding:0.2rem 0.4rem;
+  font-size:0.75rem; position:relative; top:-0.5rem; left:-0.2rem;
+}
+
+/* Notification cards */
+.notif-card { padding:0.5rem; border-bottom:1px solid var(--secondary); }
+.notif-card.unread { background:#fff8e1; }
+.notif-message { display:block; font-weight:500; }
+.notif-time { font-size:0.75rem; color:#666; }
+
+/* Emoji picker grid */
+.emoji-picker-grid {
+  display:grid; grid-template-columns:repeat(6,1fr); gap:0.5rem; padding:1rem;
+}
+.emoji-item {
+  font-size:1.5rem; background:var(--secondary); border:none; border-radius:4px; cursor:pointer;
+}
+.emoji-item:hover { background:var(--primary); color:#fff; }
+
+/* Theme & palette chips */
+.theme-chip, .palette-chip {
+  background: var(--secondary);
+  border: 1px solid var(--primary);
+  border-radius: 0.3rem;
+  cursor: pointer;
+  margin: 0.2rem;
+  padding: 0.3rem 0.6rem;
+}
+.theme-chip:hover, .palette-chip:hover { background: var(--primary); color:#fff; }
+
+/* List emoji size */
+.list-detail-emoji { font-size:2rem; vertical-align:middle; margin-right:0.5rem; }
+
+/* Palette variables */
+html[data-palette="salvia"]    { --primary:#7A9A82; --secondary:#C9D6C5; --background:#F4F8F5; }
+html[data-palette="oliva"]     { --primary:#8A7A5B; --secondary:#D4C9B5; --background:#F9F5EE; }
+html[data-palette="lavanda"]   { --primary:#A89ABF; --secondary:#E2DFF5; --background:#FAF8FF; }
+html[data-palette="terracota"] { --primary:#B96A58; --secondary:#F2C1B6; --background:#FFF5F2; }
+html[data-palette="oceano"]    { --primary:#5A8DA8; --secondary:#C5DEE9; --background:#F0F8FF; }
+
+html[data-theme="dark"] {
+  --primary:#222; --secondary:#444; --background:#111; color:#eee;
+}
+
   --sage: #789b72;
   --sage-soft: #e5eddc;
   --cream: #f8f5ee;
