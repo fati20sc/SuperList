@@ -1,0 +1,11 @@
+{
+  "name": "superlist",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SuperList - Lista de compras inteligente y compartida para la familia",
+  "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/cli": "^6.1.2"
+  }
+}

@@ -5,10 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SuperList</title>
     <link rel="icon" type="image/png" href="./LOGO TRANSPARENTE.png" />
+    <meta name="theme-color" content="#f8f5ee" />
+    <script>
+      // Se aplica el tema ANTES de pintar para evitar el parpadeo al cargar.
+      // Usa las mismas claves que app.js: superlist_theme_mode / superlist_theme_palette.
+      (function () {
+        try {
+          var root = document.documentElement;
+          var mode = localStorage.getItem("superlist_theme_mode");
+          if (mode !== "light" && mode !== "dark") {
+            mode = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          var palette = localStorage.getItem("superlist_theme_palette");
+          var valid = ["verde", "lila", "rojo", "azul", "turquesa", "naranja", "amarillo"];
+          root.setAttribute("data-theme", mode);
+          root.setAttribute("data-palette", valid.indexOf(palette) !== -1 ? palette : "verde");
+          root.style.colorScheme = mode;
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "light");
+          document.documentElement.setAttribute("data-palette", "verde");
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&family=Reddit+Sans:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link rel="stylesheet" href="./styles.css?v=7" />
   </head>
   <body>
     <div class="app-shell">
@@ -21,6 +43,13 @@
           </div>
         </button>
         <div class="top-actions">
+          <button class="notification-bell" id="notification-bell" type="button" aria-label="Notificaciones" title="Notificaciones" data-view="notifications" style="background: none; border: none; cursor: pointer; padding: 6px 8px; display: none; align-items: center; justify-content: center; position: relative; color: var(--ink); border-radius: 8px;">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="notification-badge" id="notification-badge" style="position: absolute; top: 2px; right: 2px; background: var(--tomato); color: white; border-radius: 999px; font-size: 0.65rem; font-weight: bold; min-width: 16px; height: 16px; display: none; align-items: center; justify-content: center; padding: 0 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.25);">0</span>
+          </button>
           <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir menú" aria-expanded="false">
             <span></span>
             <span></span>
@@ -38,6 +67,10 @@
         <button class="side-menu-item" type="button" data-menu-action="home">Inicio</button>
         <button class="side-menu-item" type="button" data-menu-action="account">Mi cuenta</button>
         <button class="side-menu-item" type="button" data-menu-action="lists">Mis listas</button>
+        <button class="side-menu-item" type="button" data-menu-action="notifications" style="display: flex; align-items: center; justify-content: space-between;">
+          <span>Notificaciones</span>
+          <span class="menu-badge" id="menu-notification-badge" style="background: var(--tomato); color: white; border-radius: 999px; font-size: 0.72rem; font-weight: bold; min-width: 18px; height: 18px; display: none; align-items: center; justify-content: center; padding: 0 5px;">0</span>
+        </button>
         <button class="side-menu-item danger" type="button" data-menu-action="logout">Cerrar sesión</button>
       </aside>
       <div class="menu-backdrop" id="menu-backdrop" hidden></div>
@@ -289,7 +322,25 @@
       </form>
     </dialog>
 
+    <!-- Boton flotante de tema: vive fuera de las vistas, asi que esta disponible
+         en toda la pagina (inicio, listas, cuenta, notificaciones). -->
+    <button id="theme-fab" class="theme-fab" type="button" aria-label="Cambiar tema" title="Cambiar tema">
+      <svg class="theme-fab-icon theme-fab-sun" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="5"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+      <svg class="theme-fab-icon theme-fab-moon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+    </button>
+
+    <dialog id="theme-dialog" class="dialog theme-dialog"></dialog>
+
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./app.js?v=5"></script>
+    <script src="./app.js?v=7"></script>
   </body>
 </html>

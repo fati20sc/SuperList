@@ -5,58 +5,80 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-
-      - name: Set up JDK 11
-        uses: actions/setup-java@v5
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 11
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Set up Node
-        uses: actions/setup-node@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Install npm dependencies
-        working-directory: outputs/mi-casa
-        run: npm install
-
-      - name: Install Android SDK command-line tools
+      # La app principal vive en la raiz del repo.
+      # Se arma www/ con los archivos estaticos de ahi.
+      - name: Prepare web assets
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip
-          mkdir -p $HOME/android-sdk/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip
-          unzip -q cmdline-tools.zip -d $HOME/android-sdk/cmdline-tools
-          mv $HOME/android-sdk/cmdline-tools/cmdline-tools $HOME/android-sdk/cmdline-tools/latest
-          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          mkdir -p www
+          cp index.html app.js styles.css sw.js manifest.json *.png *.jpg www/ 2>/dev/null || true
 
-      - name: Accept licenses & install platforms
+      - name: Install dependencies
         run: |
-          yes | sdkmanager --sdk_root=$HOME/android-sdk "platform-tools" "platforms;android-33" "build-tools;33.0.0"
-          yes | sdkmanager --licenses --sdk_root=$HOME/android-sdk
+          npm install --no-save @capacitor/core@^6.1.2 @capacitor/android@^6.1.2 @capacitor/cli@^6.1.2
 
-      - name: Capacitor init & add Android
-        working-directory: outputs/mi-casa
+      - name: Initialize Capacitor Android
         run: |
-          npx cap init SuperList com.rosario.superlist
           npx cap add android
-          npx cap copy
+          npx cap sync android
 
-      - name: Build APK (debug)
-        working-directory: outputs/mi-casa/android
-        run: ./gradlew assembleDebug
+      - name: Apply custom transparent icons
+        run: |
+          # Remove anydpi-v26 XMLs so Android uses pure transparent PNG icons without white borders
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+          ICON_SRC=mi-casa/logo-512.png
+          if [ ! -f "$ICON_SRC" ]; then ICON_SRC=logo.png; fi
+          for dir in android/app/src/main/res/mipmap-*; do
+            if [ -d "$dir" ]; then
+              cp "$ICON_SRC" "$dir/ic_launcher.png"
+              cp "$ICON_SRC" "$dir/ic_launcher_round.png"
+              cp "$ICON_SRC" "$dir/ic_launcher_foreground.png" 2>/dev/null || true
+            fi
+          done
+
+      - name: Build APK (Debug)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Copy APK with clean name
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk SuperList.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: superlist-debug-apk
-          path: outputs/mi-casa/android/app/build/outputs/apk/debug/app-debug.apk
+          name: SuperList-APK
+          path: SuperList.apk
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "SuperList App"
+          body: "Descarga directa del APK nativo e independiente de SuperList."
+          files: SuperList.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

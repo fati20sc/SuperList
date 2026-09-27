@@ -53,6 +53,248 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+// ==============================================================================
+// Sistema de Notificaciones Internas para Listas Compartidas
+// ==============================================================================
+function getNotificationsStorageKey() {
+  const user = currentUser();
+  return user ? `superlist-notifications-v2-${user.id}` : "superlist-notifications-v2-anon";
+}
+
+function loadStoredNotifications() {
+  try {
+    const raw = localStorage.getItem(getNotificationsStorageKey());
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveNotifications() {
+  try {
+    localStorage.setItem(getNotificationsStorageKey(), JSON.stringify(state.notifications || []));
+  } catch (e) {
+    console.warn("No se pudieron guardar las notificaciones:", e);
+  }
+}
+
+function updateNotificationBadge() {
+  const notifs = state.notifications || [];
+  const unreadCount = notifs.filter((n) => !n.read).length;
+
+  const bellBadge = document.querySelector("#notification-badge");
+  if (bellBadge) {
+    if (unreadCount > 0) {
+      bellBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      bellBadge.style.display = "inline-flex";
+    } else {
+      bellBadge.style.display = "none";
+    }
+  }
+
+  const menuBadge = document.querySelector("#menu-notification-badge");
+  if (menuBadge) {
+    if (unreadCount > 0) {
+      menuBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      menuBadge.style.display = "inline-flex";
+    } else {
+      menuBadge.style.display = "none";
+    }
+  }
+
+  const bellBtn = document.querySelector("#notification-bell");
+  if (bellBtn) {
+    bellBtn.style.display = currentUser() ? "inline-flex" : "none";
+  }
+}
+
+function addNotification(notification) {
+  if (!notification || !notification.id) return;
+  if (!Array.isArray(state.notifications)) {
+    state.notifications = [];
+  }
+
+  const exists = state.notifications.some(
+    (n) => n.id === notification.id || (notification.dedupKey && n.dedupKey === notification.dedupKey)
+  );
+  if (exists) return;
+
+  state.notifications.unshift(notification);
+  if (state.notifications.length > 100) {
+    state.notifications = state.notifications.slice(0, 100);
+  }
+
+  saveNotifications();
+  updateNotificationBadge();
+
+  if (currentView === "notifications") {
+    renderNotifications();
+  }
+}
+
+function markAllRead() {
+  if (!Array.isArray(state.notifications)) return;
+  state.notifications = state.notifications.map((n) => ({ ...n, read: true }));
+  saveNotifications();
+  updateNotificationBadge();
+  if (currentView === "notifications") {
+    renderNotifications();
+  }
+}
+
+function clearHistory() {
+  state.notifications = [];
+  saveNotifications();
+  updateNotificationBadge();
+  if (currentView === "notifications") {
+    renderNotifications();
+  }
+}
+
+function markNotificationRead(id) {
+  if (!Array.isArray(state.notifications) || !id) return;
+  let changed = false;
+  state.notifications = state.notifications.map((n) => {
+    if (n.id === id && !n.read) {
+      changed = true;
+      return { ...n, read: true };
+    }
+    return n;
+  });
+  if (changed) {
+    saveNotifications();
+    updateNotificationBadge();
+    if (currentView === "notifications") {
+      renderNotifications();
+    }
+  }
+}
+
+function formatTimeAgo(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (isNaN(diffSec) || diffSec < 45) return "Hace un momento";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `Hace ${diffMin} min`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `Hace ${diffHours} h`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return "Ayer";
+  if (diffDays < 7) return `Hace ${diffDays} días`;
+  return `${date.getDate().toString().padStart(2, "0")}/${(date.getMonth() + 1).toString().padStart(2, "0")}/${date.getFullYear()}`;
+}
+
+async function broadcastGroupNotification(notification) {
+  if (!notification) return;
+  try {
+    if (realtimeChannel) {
+      await realtimeChannel.send({
+        type: "broadcast",
+        event: "group_notification",
+        payload: notification,
+      });
+    }
+  } catch (err) {
+    console.warn("No se pudo transmitir notificación realtime:", err);
+  }
+}
+
+function handleIncomingNotification(payload) {
+  if (!payload || !payload.id) return;
+  const user = currentUser();
+  if (!user) return;
+  if (payload.actorId && payload.actorId === user.id) return;
+  const isMember = (state.groups || []).some((g) => g.id === payload.groupId);
+  if (!isMember) return;
+
+  const exists = (state.notifications || []).some(
+    (n) => n.id === payload.id || (payload.dedupKey && n.dedupKey === payload.dedupKey)
+  );
+  if (exists) return;
+
+  addNotification(payload);
+  showNotification(payload.message || payload.title, "info");
+}
+
+function renderNotifications() {
+  const user = currentUser();
+  if (!user) return;
+  const notifs = state.notifications || [];
+  const unreadCount = notifs.filter((n) => !n.read).length;
+
+  app.innerHTML = `
+    <section class="settings-layout notifications-layout" style="max-width: 680px; margin: 0 auto; width: 100%;">
+      <section class="panel">
+        <div class="panel-head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <p class="eyebrow">Listas compartidas</p>
+            <h2 style="margin: 0;">Notificaciones</h2>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="secondary-button" type="button" id="mark-all-read-btn" style="font-size: 0.82rem; padding: 7px 12px;" ${unreadCount === 0 ? "disabled" : ""}>
+              ✓ Marcar leídas
+            </button>
+            <button class="secondary-button" type="button" id="clear-notifications-btn" style="font-size: 0.82rem; padding: 7px 12px; color: var(--tomato); border-color: var(--line);" ${notifs.length === 0 ? "disabled" : ""}>
+              Limpiar historial
+            </button>
+          </div>
+        </div>
+
+        ${unreadCount > 0 ? `
+          <div style="background: var(--sage-soft); color: var(--ink); padding: 8px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between;">
+            <span>Tenés ${unreadCount} notificación${unreadCount === 1 ? "" : "es"} sin leer</span>
+            <span style="font-size: 0.78rem; font-weight: normal; opacity: 0.8;">Tocá una para marcarla como leída</span>
+          </div>
+        ` : ""}
+
+        ${notifs.length === 0 ? `
+          <div class="product-list lists-state">
+            ${empty("No tenés notificaciones aún. Los cambios en listas compartidas aparecerán acá.")}
+          </div>
+        ` : `
+          <div class="product-list" style="display: flex; flex-direction: column; gap: 10px;">
+            ${notifs.map((n) => {
+              const isUnread = !n.read;
+              const typeIcon = n.type === "product_added" ? "🛒" :
+                               n.type === "product_deleted" ? "🗑️" :
+                               n.type === "product_status" ? "🔄" :
+                               n.type === "product_bought" ? "✅" :
+                               n.type === "member_joined" ? "👥" : "📌";
+              return `
+                <div class="product-card notification-card" data-notification-id="${escapeHtml(n.id)}" role="button" tabindex="0" style="cursor: pointer; transition: all 0.2s ease; border-left: 4px solid ${isUnread ? "var(--sage)" : "transparent"}; background: ${isUnread ? "var(--paper)" : "rgba(255, 250, 240, 0.6)"}; display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px;">
+                  <div style="font-size: 1.4rem; line-height: 1; flex-shrink: 0; padding-top: 2px;">${typeIcon}</div>
+                  <div class="product-main" style="flex: 1; min-width: 0;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px;">
+                      <span style="font-weight: ${isUnread ? "750" : "600"}; font-size: 0.95rem; color: var(--ink);">
+                        ${escapeHtml(n.title || "Notificación")}
+                      </span>
+                      <span style="font-size: 0.78rem; color: var(--muted); white-space: nowrap;">
+                        ${formatTimeAgo(n.timestamp)}
+                      </span>
+                    </div>
+                    <p style="margin: 0 0 6px 0; font-size: 0.9rem; color: ${isUnread ? "var(--ink)" : "var(--muted)"}; line-height: 1.4;">
+                      ${escapeHtml(n.message || "")}
+                    </p>
+                    <div class="product-meta" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                      ${n.groupName ? `<span class="chip" style="font-size: 0.75rem; padding: 2px 8px; min-height: unset;">🏠 ${escapeHtml(n.groupName)}</span>` : ""}
+                      ${n.actorName ? `<span style="font-size: 0.78rem; color: var(--muted);">Por: ${escapeHtml(n.actorName)}</span>` : ""}
+                      ${isUnread ? `<span style="margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--sage); display: inline-block;" title="No leída"></span>` : `<span style="margin-left: auto; font-size: 0.75rem; color: var(--muted);">Leída</span>`}
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        `}
+      </section>
+    </section>
+  `;
+}
+
 if (new URLSearchParams(location.search).has("reset")) {
   localStorage.removeItem(APP_KEY);
   localStorage.removeItem(SESSION_KEY);
@@ -238,15 +480,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const actionButton = event.target.closest("[data-action='edit-profile'], [data-action='change-password'], [data-action='install-pwa']");
+    const actionButton = event.target.closest("[data-action='edit-profile'], [data-action='change-password']");
     if (actionButton) {
       const action = actionButton.dataset.action;
-      if (action === "install-pwa") {
-        if (typeof window.triggerInstallPWA === "function") {
-          window.triggerInstallPWA();
-        }
-        return;
-      } else if (action === "edit-profile") {
+      if (action === "edit-profile") {
         const user = currentUser();
         const dlg = document.querySelector("#edit-profile-dialog");
         const frm = document.querySelector("#edit-profile-form");
@@ -602,7 +839,7 @@ syncChannel?.addEventListener("message", async () => {
 });
 
 function loadState() {
-  return { users: [], groups: [], uiNotice: "" };
+  return { users: [], groups: [], notifications: loadStoredNotifications(), uiNotice: "" };
 }
 
 function loadSession() {
@@ -945,8 +1182,43 @@ async function loadAppData() {
         membersByGroup.get(group.id) || [],
         (productsByGroup.get(group.id) || []).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
       )),
+      notifications: (state.notifications && state.notifications.length) ? state.notifications : loadStoredNotifications(),
       uiNotice: state.uiNotice || "",
     };
+
+    // Historial inicial si el usuario no tiene notificaciones guardadas
+    if (!state.notifications || state.notifications.length === 0) {
+      const initialNotifs = [];
+      state.groups.forEach((g) => {
+        if (g.type === "shared") {
+          g.products.forEach((p) => {
+            if (p.addedBy && p.addedBy !== user.id) {
+              initialNotifs.push({
+                id: createId("notif"),
+                dedupKey: `add-${p.id}`,
+                type: "product_added",
+                title: "Producto agregado",
+                message: `${p.addedByName || "Un miembro"} agregó "${p.name}" en la lista "${g.name}"`,
+                actorId: p.addedBy,
+                actorName: p.addedByName || "Un miembro",
+                targetId: p.id,
+                targetName: p.name,
+                groupId: g.id,
+                groupName: g.name,
+                timestamp: p.createdAt || g.createdAt || new Date().toISOString(),
+                read: true,
+              });
+            }
+          });
+        }
+      });
+      if (initialNotifs.length > 0) {
+        initialNotifs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        state.notifications = initialNotifs.slice(0, 50);
+        saveNotifications();
+      }
+    }
+    updateNotificationBadge();
 
     if (session.groupId && !state.groups.some((group) => group.id === session.groupId)) {
       session.groupId = state.groups[0]?.id || null;
@@ -2304,7 +2576,6 @@ function renderSettings() {
             </div>
           </div>
           <div class="account-actions">
-            
             <button class="secondary-button" type="button" data-action="edit-profile">Editar perfil</button>
             <button class="secondary-button" type="button" data-action="change-password">Cambiar contraseña</button>
             <button class="danger-button logout-button" type="button" data-action="logout">Cerrar sesión</button>
@@ -2766,34 +3037,4 @@ if ("serviceWorker" in navigator) {
       });
   });
 }
-
-// Soporte para instalación de PWA en móviles y navegador
-let deferredInstallPrompt = null;
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
-});
-
-window.addEventListener("appinstalled", () => {
-  deferredInstallPrompt = null;
-  showNotification("¡SuperList se instaló correctamente en tu dispositivo!", "success");
-});
-
-window.triggerInstallPWA = async function() {
-  if (deferredInstallPrompt) {
-    deferredInstallPrompt.prompt();
-    const { outcome } = await deferredInstallPrompt.userChoice;
-    if (outcome === "accepted") {
-      deferredInstallPrompt = null;
-    }
-  } else {
-    // Si no está el prompt nativo de Chromium (ej. iOS Safari o ya instalada)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    if (isIOS) {
-      showNotification("Para instalar en iPhone: tocá el botón Compartir (icono con flecha hacia arriba) y elegí 'Agregar a pantalla de inicio'.", "info");
-    } else {
-      showNotification("Para instalar: abrí el menú (tres puntos) de tu navegador y elegí 'Instalar aplicación' o 'Agregar a la pantalla principal'.", "info");
-    }
-  }
-};
 

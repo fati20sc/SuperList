@@ -5,10 +5,161 @@ const MEMBERS_TABLE = "shopping_group_members";
 const PRODUCTS_TABLE = "shopping_products";
 const PROFILES_TABLE = "profiles";
 
+// ==============================================================================
+// SISTEMA DE TEMAS Y PALETAS
+// Unico punto de entrada: applyTheme() y applyPalette().
+// La preferencia manual (superlist_theme_mode) tiene prioridad sobre la
+// deteccion automatica del dispositivo (prefers-color-scheme: dark).
+// ==============================================================================
+const THEME_MODE_KEY = "superlist_theme_mode";      // "light" | "dark" | "auto"
+const THEME_PALETTE_KEY = "superlist_theme_palette"; // id de THEME_PALETTES
+
+const THEME_MODES = [
+  { id: "light", label: "Claro", icon: "☀️" },
+  { id: "dark", label: "Oscuro", icon: "🌙" },
+  { id: "auto", label: "Automático", icon: "📱" },
+];
+
+// Siete paletas, cada una con su version clara y su version nocturna.
+// "verde" es la original de SuperList y la que se aplica por defecto (automatica);
+// las demas solo entran si el usuario las elige explicitamente.
+// Los emoji se limitan a codepoints con cobertura amplia: \u{1FA76} se ve como
+// cuadro vacio en equipos sin esa fuente.
+const THEME_PALETTES = [
+  { id: "verde",    label: "Verde",    emoji: "\u{1F33F}", light: "#517d49", dark: "#5b8e52" },
+  { id: "lila",     label: "Lila",     emoji: "\u{1F49C}", light: "#8365a5", dark: "#8f77ab" },
+  { id: "rojo",     label: "Rojo",     emoji: "\u2764\uFE0F", light: "#b0594c", dark: "#b76e63" },
+  { id: "azul",     label: "Azul",     emoji: "\u{1F499}", light: "#4b7892", dark: "#5887a2" },
+  { id: "turquesa", label: "Turquesa", emoji: "\u{1F4A7}", light: "#3b7d76", dark: "#478d86" },
+  { id: "naranja",  label: "Naranja",  emoji: "\u{1F9E1}", light: "#9f6538", dark: "#b07344" },
+  { id: "amarillo", label: "Amarillo", emoji: "\u{1F49B}", light: "#886f30", dark: "#997e3b" },
+];
+
+const DEFAULT_PALETTE = "verde";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+const darkMediaQuery =
+  typeof window.matchMedia === "function" ? window.matchMedia(DARK_QUERY) : null;
+
+function readStoredThemeMode() {
+  try {
+    const value = localStorage.getItem(THEME_MODE_KEY);
+    return THEME_MODES.some((mode) => mode.id === value) ? value : "auto";
+  } catch (error) {
+    return "auto";
+  }
+}
+
+function readStoredPalette() {
+  try {
+    const value = localStorage.getItem(THEME_PALETTE_KEY);
+    return THEME_PALETTES.some((palette) => palette.id === value) ? value : DEFAULT_PALETTE;
+  } catch (error) {
+    return DEFAULT_PALETTE;
+  }
+}
+
+// "auto" delega en el dispositivo; "light"/"dark" son la eleccion manual.
+function resolveThemeMode(mode) {
+  if (mode === "light" || mode === "dark") return mode;
+  return darkMediaQuery && darkMediaQuery.matches ? "dark" : "light";
+}
+
+function getActiveThemeMode() {
+  return resolveThemeMode(readStoredThemeMode());
+}
+
+function getActivePalette() {
+  return readStoredPalette();
+}
+
+function getPaletteById(id) {
+  return THEME_PALETTES.find((palette) => palette.id === id) || THEME_PALETTES[0];
+}
+
+// Aplica el modo (claro/oscuro). No guarda nada: solo resuelve y refleja.
+function applyTheme() {
+  const mode = getActiveThemeMode();
+  const root = document.documentElement;
+  root.setAttribute("data-theme", mode);
+  root.style.colorScheme = mode;
+  syncThemeColorMeta(mode);
+  // El boton flotante depende del modo resuelto: se refresca aqui para que
+  // tambien quede al dia cuando el sistema cambia en modo "auto".
+  if (typeof updateThemeButton === "function") updateThemeButton();
+  return mode;
+}
+
+// Aplica la paleta elegida y la persiste localmente.
+function applyPalette(id) {
+  const palette = getPaletteById(id);
+  document.documentElement.setAttribute("data-palette", palette.id);
+  try {
+    localStorage.setItem(THEME_PALETTE_KEY, palette.id);
+  } catch (error) {
+    console.warn("No se pudo guardar la paleta:", error);
+  }
+  if (typeof updateThemeButton === "function") updateThemeButton();
+  return palette;
+}
+
+// Guarda la preferencia manual de modo y la aplica de inmediato.
+function setThemeMode(mode) {
+  if (!THEME_MODES.some((item) => item.id === mode)) return getActiveThemeMode();
+  try {
+    localStorage.setItem(THEME_MODE_KEY, mode);
+  } catch (error) {
+    console.warn("No se pudo guardar el modo de tema:", error);
+  }
+  return applyTheme();
+}
+
+// Mantiene la barra del navegador / PWA alineada con el modo actual.
+function syncThemeColorMeta(mode) {
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.setAttribute("name", "theme-color");
+    document.head.appendChild(meta);
+  }
+  meta.setAttribute("content", mode === "dark" ? "#191713" : "#f8f5ee");
+}
+
+// Si el usuario esta en "auto", reacciona a los cambios del sistema.
+function watchSystemTheme() {
+  if (!darkMediaQuery) return;
+  const handler = () => {
+    if (readStoredThemeMode() === "auto") applyTheme();
+  };
+  if (typeof darkMediaQuery.addEventListener === "function") {
+    darkMediaQuery.addEventListener("change", handler);
+  } else if (typeof darkMediaQuery.addListener === "function") {
+    darkMediaQuery.addListener(handler);
+  }
+}
+
+// Arranque: aplica la preferencia guardada (o la del dispositivo) sin parpadeo.
+function initTheme() {
+  applyTheme();
+  applyPalette(getActivePalette());
+  watchSystemTheme();
+  updateThemeButton();
+
+  // El boton flotante vive fuera de las vistas, asi que se engancha una sola vez.
+  const fab = document.querySelector("#theme-fab");
+  if (fab && !fab.dataset.bound) {
+    fab.dataset.bound = "1";
+    fab.addEventListener("click", openThemeDialog);
+  }
+}
+
+
 const supabaseClient = window.supabase.createClient(
   "https://ismweucgziipplsnkwuh.supabase.co",
   "sb_publishable_BdLR3gchcohSMV7VefHQMw_lgnIph5U"
 );
+
+const PRODUCTION_URL = "https://fati20sc.github.io/SuperList/";
 
 // Caché del usuario actual de Supabase
 let cachedSupabaseUser = null;
@@ -21,11 +172,11 @@ function showNotification(message, type = "info") {
     position: fixed;
     top: 20px;
     right: 20px;
-    background: ${type === "error" ? "var(--error)" : type === "success" ? "var(--sage)" : "var(--text)"};
-    color: ${type === "error" || type === "success" ? "#fff" : "var(--surface)"};
+    background: ${type === "error" ? "var(--danger-bg)" : type === "success" ? "var(--accent)" : "var(--text)"};
+    color: ${type === "error" ? "var(--danger-ink)" : type === "success" ? "var(--on-solid)" : "var(--surface)"};
     padding: 16px 24px;
     border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    box-shadow: var(--shadow-dialog);
     z-index: 2000;
     max-width: 300px;
     animation: slideIn 0.3s ease-out;
@@ -52,6 +203,251 @@ style.textContent = `
   }
 `;
 document.head.appendChild(style);
+
+// ==============================================================================
+// Sistema de Notificaciones Internas para Listas Compartidas
+// ==============================================================================
+function getNotificationsStorageKey() {
+  const user = currentUser();
+  return user ? `superlist-notifications-v2-${user.id}` : "superlist-notifications-v2-anon";
+}
+
+function loadStoredNotifications() {
+  try {
+    const raw = localStorage.getItem(getNotificationsStorageKey());
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveNotifications() {
+  try {
+    localStorage.setItem(getNotificationsStorageKey(), JSON.stringify(state.notifications || []));
+  } catch (e) {
+    console.warn("No se pudieron guardar las notificaciones:", e);
+  }
+}
+
+function updateNotificationBadge() {
+  const notifs = state.notifications || [];
+  const unreadCount = notifs.filter((n) => !n.read).length;
+
+  const bellBadge = document.querySelector("#notification-badge");
+  if (bellBadge) {
+    if (unreadCount > 0) {
+      bellBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      bellBadge.style.display = "inline-flex";
+    } else {
+      bellBadge.style.display = "none";
+    }
+  }
+
+  const menuBadge = document.querySelector("#menu-notification-badge");
+  if (menuBadge) {
+    if (unreadCount > 0) {
+      menuBadge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      menuBadge.style.display = "inline-flex";
+    } else {
+      menuBadge.style.display = "none";
+    }
+  }
+
+  const bellBtn = document.querySelector("#notification-bell");
+  if (bellBtn) {
+    bellBtn.style.display = currentUser() ? "inline-flex" : "none";
+  }
+}
+
+function addNotification(notification) {
+  if (!notification || !notification.id) return;
+  if (!Array.isArray(state.notifications)) {
+    state.notifications = [];
+  }
+
+  // De-duplicación estricta por ID o dedupKey para evitar duplicados entre Realtime y local
+  const exists = state.notifications.some(
+    (n) => n.id === notification.id || (notification.dedupKey && n.dedupKey === notification.dedupKey)
+  );
+  if (exists) return;
+
+  state.notifications.unshift(notification);
+  if (state.notifications.length > 100) {
+    state.notifications = state.notifications.slice(0, 100);
+  }
+
+  saveNotifications();
+  updateNotificationBadge();
+
+  if (currentView === "notifications") {
+    renderNotifications();
+  }
+}
+
+function markAllRead() {
+  if (!Array.isArray(state.notifications)) return;
+  state.notifications = state.notifications.map((n) => ({ ...n, read: true }));
+  saveNotifications();
+  updateNotificationBadge();
+  if (currentView === "notifications") {
+    renderNotifications();
+  }
+}
+
+function clearHistory() {
+  state.notifications = [];
+  saveNotifications();
+  updateNotificationBadge();
+  if (currentView === "notifications") {
+    renderNotifications();
+  }
+}
+
+function markNotificationRead(id) {
+  if (!Array.isArray(state.notifications) || !id) return;
+  let changed = false;
+  state.notifications = state.notifications.map((n) => {
+    if (n.id === id && !n.read) {
+      changed = true;
+      return { ...n, read: true };
+    }
+    return n;
+  });
+  if (changed) {
+    saveNotifications();
+    updateNotificationBadge();
+    if (currentView === "notifications") {
+      renderNotifications();
+    }
+  }
+}
+
+function formatTimeAgo(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (isNaN(diffSec) || diffSec < 45) return "Hace un momento";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `Hace ${diffMin} min`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `Hace ${diffHours} h`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays === 1) return "Ayer";
+  if (diffDays < 7) return `Hace ${diffDays} días`;
+  return `${date.getDate().toString().padStart(2, "0")}/${(date.getMonth() + 1).toString().padStart(2, "0")}/${date.getFullYear()}`;
+}
+
+async function broadcastGroupNotification(notification) {
+  if (!notification) return;
+  try {
+    if (realtimeChannel) {
+      await realtimeChannel.send({
+        type: "broadcast",
+        event: "group_notification",
+        payload: notification,
+      });
+    }
+  } catch (err) {
+    console.warn("No se pudo transmitir notificación realtime:", err);
+  }
+}
+
+function handleIncomingNotification(payload) {
+  if (!payload || !payload.id) return;
+  const user = currentUser();
+  if (!user) return;
+  // No notificar al propio autor de la acción
+  if (payload.actorId && payload.actorId === user.id) return;
+  // Solo notificar si el usuario pertenece al grupo
+  const isMember = (state.groups || []).some((g) => g.id === payload.groupId);
+  if (!isMember) return;
+
+  const exists = (state.notifications || []).some(
+    (n) => n.id === payload.id || (payload.dedupKey && n.dedupKey === payload.dedupKey)
+  );
+  if (exists) return;
+
+  addNotification(payload);
+  showNotification(payload.message || payload.title, "info");
+}
+
+function renderNotifications() {
+  const user = currentUser();
+  if (!user) return;
+  const notifs = state.notifications || [];
+  const unreadCount = notifs.filter((n) => !n.read).length;
+
+  app.innerHTML = `
+    <section class="settings-layout notifications-layout" style="max-width: 680px; margin: 0 auto; width: 100%;">
+      <section class="panel">
+        <div class="panel-head" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+          <div>
+            <p class="eyebrow">Listas compartidas</p>
+            <h2 style="margin: 0;">Notificaciones</h2>
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="secondary-button" type="button" id="mark-all-read-btn" style="font-size: 0.82rem; padding: 7px 12px;" ${unreadCount === 0 ? "disabled" : ""}>
+              ✓ Marcar leídas
+            </button>
+            <button class="secondary-button" type="button" id="clear-notifications-btn" style="font-size: 0.82rem; padding: 7px 12px; color: var(--tomato); border-color: var(--line);" ${notifs.length === 0 ? "disabled" : ""}>
+              Limpiar historial
+            </button>
+          </div>
+        </div>
+
+        ${unreadCount > 0 ? `
+          <div style="background: var(--sage-soft); color: var(--ink); padding: 8px 14px; border-radius: 8px; font-size: 0.88rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between;">
+            <span>Tenés ${unreadCount} notificación${unreadCount === 1 ? "" : "es"} sin leer</span>
+            <span style="font-size: 0.78rem; font-weight: normal; opacity: 0.8;">Tocá una para marcarla como leída</span>
+          </div>
+        ` : ""}
+
+        ${notifs.length === 0 ? `
+          <div class="product-list lists-state">
+            ${empty("No tenés notificaciones aún. Los cambios en listas compartidas aparecerán acá.")}
+          </div>
+        ` : `
+          <div class="product-list" style="display: flex; flex-direction: column; gap: 10px;">
+            ${notifs.map((n) => {
+              const isUnread = !n.read;
+              const typeIcon = n.type === "product_added" ? "🛒" :
+                               n.type === "product_deleted" ? "🗑️" :
+                               n.type === "product_status" ? "🔄" :
+                               n.type === "product_bought" ? "✅" :
+                               n.type === "member_joined" ? "👥" : "📌";
+              return `
+                <div class="product-card notification-card" data-notification-id="${escapeHtml(n.id)}" role="button" tabindex="0" style="cursor: pointer; transition: all 0.2s ease; border-left: 4px solid ${isUnread ? "var(--accent)" : "transparent"}; background: ${isUnread ? "var(--surface)" : "var(--glass-read)"}; display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px;">
+                  <div style="font-size: 1.4rem; line-height: 1; flex-shrink: 0; padding-top: 2px;">${typeIcon}</div>
+                  <div class="product-main" style="flex: 1; min-width: 0;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px;">
+                      <span style="font-weight: ${isUnread ? "750" : "600"}; font-size: 0.95rem; color: var(--ink);">
+                        ${escapeHtml(n.title || "Notificación")}
+                      </span>
+                      <span style="font-size: 0.78rem; color: var(--muted); white-space: nowrap;">
+                        ${formatTimeAgo(n.timestamp)}
+                      </span>
+                    </div>
+                    <p style="margin: 0 0 6px 0; font-size: 0.9rem; color: ${isUnread ? "var(--ink)" : "var(--muted)"}; line-height: 1.4;">
+                      ${escapeHtml(n.message || "")}
+                    </p>
+                    <div class="product-meta" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                      ${n.groupName ? `<span class="chip" style="font-size: 0.75rem; padding: 2px 8px; min-height: unset;">🏠 ${escapeHtml(n.groupName)}</span>` : ""}
+                      ${n.actorName ? `<span style="font-size: 0.78rem; color: var(--muted);">Por: ${escapeHtml(n.actorName)}</span>` : ""}
+                      ${isUnread ? `<span style="margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--sage); display: inline-block;" title="No leída"></span>` : `<span style="margin-left: auto; font-size: 0.75rem; color: var(--muted);">Leída</span>`}
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        `}
+      </section>
+    </section>
+  `;
+}
 
 if (new URLSearchParams(location.search).has("reset")) {
   localStorage.removeItem(APP_KEY);
@@ -150,15 +546,15 @@ function showInviteCodeMessage(inviteCode) {
   if (!inviteCode) return;
   const codeMessage = document.createElement("div");
   codeMessage.className = "dialog";
-  codeMessage.style.cssText = "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 24px; border-radius: 28px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); z-index: 1000; text-align: center; max-width: 400px; width: 90%; border: 1px solid #e0e0e0;";
+  codeMessage.style.cssText = "position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--surface); color: var(--text); padding: 24px; border-radius: 28px; box-shadow: var(--shadow-dialog); z-index: 1000; text-align: center; max-width: 400px; width: 90%; border: 1px solid var(--line);";
   codeMessage.innerHTML = `
     <div style="margin-bottom: 20px;">
       <h2 style="margin: 0 0 8px 0; color: var(--text);">¡Lista compartida creada!</h2>
       <p style="margin: 0; color: var(--text-muted);">Código de invitación</p>
     </div>
-    <div id="invite-code-display" style="background: var(--line); padding: 20px; border-radius: 16px; font-size: 32px; font-weight: bold; letter-spacing: 4px; margin-bottom: 20px; cursor: pointer; user-select: all; color: var(--text); transition: all 0.2s;">${inviteCode}</div>
+    <div id="invite-code-display" style="background: var(--surface-3); padding: 20px; border-radius: 16px; font-size: 32px; font-weight: bold; letter-spacing: 4px; margin-bottom: 20px; cursor: pointer; user-select: all; color: var(--text); transition: all 0.2s;">${inviteCode}</div>
     <p style="margin: 0 0 20px 0; font-size: 14px; color: var(--text-muted);">Tocá el código para copiarlo</p>
-    <button style="width: 100%; padding: 14px 24px; background: var(--sage); color: #fffaf0; border: none; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: 600;" onclick="this.parentElement.remove()">Cerrar</button>
+    <button style="width: 100%; padding: 14px 24px; background: var(--accent); color: var(--on-solid); border: none; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: 600;" onclick="this.parentElement.remove()">Cerrar</button>
   `;
   document.body.appendChild(codeMessage);
 
@@ -166,11 +562,11 @@ function showInviteCodeMessage(inviteCode) {
   codeDisplay.addEventListener("click", () => {
     navigator.clipboard.writeText(inviteCode);
     codeDisplay.textContent = "¡Copiado!";
-    codeDisplay.style.background = "var(--primary)";
-    codeDisplay.style.color = "white";
+    codeDisplay.style.background = "var(--accent)";
+    codeDisplay.style.color = "var(--on-solid)";
     setTimeout(() => {
       codeDisplay.textContent = inviteCode;
-      codeDisplay.style.background = "var(--line)";
+      codeDisplay.style.background = "var(--surface-3)";
       codeDisplay.style.color = "var(--text)";
     }, 1500);
   });
@@ -238,15 +634,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const actionButton = event.target.closest("[data-action='edit-profile'], [data-action='change-password'], [data-action='install-pwa']");
+    const actionButton = event.target.closest("[data-action='edit-profile'], [data-action='change-password']");
     if (actionButton) {
       const action = actionButton.dataset.action;
-      if (action === "install-pwa") {
-        if (typeof window.triggerInstallPWA === "function") {
-          window.triggerInstallPWA();
-        }
-        return;
-      } else if (action === "edit-profile") {
+      if (action === "edit-profile") {
         const user = currentUser();
         const dlg = document.querySelector("#edit-profile-dialog");
         const frm = document.querySelector("#edit-profile-form");
@@ -282,6 +673,11 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       if (action === "lists") {
         currentView = "lists";
+        closeMenu();
+        render();
+      }
+      if (action === "notifications") {
+        currentView = "notifications";
         closeMenu();
         render();
       }
@@ -593,7 +989,11 @@ window.addEventListener("storage", async (event) => {
   render();
 });
 
-syncChannel?.addEventListener("message", async () => {
+syncChannel?.addEventListener("message", async (event) => {
+  if (event.data?.type === "notification") {
+    handleIncomingNotification(event.data.notification);
+    return;
+  }
   session = loadSession();
   if (currentUser()) {
     await loadAppData();
@@ -602,7 +1002,7 @@ syncChannel?.addEventListener("message", async () => {
 });
 
 function loadState() {
-  return { users: [], groups: [], uiNotice: "" };
+  return { users: [], groups: [], notifications: loadStoredNotifications(), uiNotice: "" };
 }
 
 function loadSession() {
@@ -765,11 +1165,37 @@ function setupRealtimeSubscription() {
 
   realtimeChannel = supabaseClient
     .channel("superlist-realtime-sync")
+    .on("broadcast", { event: "group_notification" }, ({ payload }) => {
+      handleIncomingNotification(payload);
+    })
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: PRODUCTS_TABLE },
-      async () => {
+      async (payload) => {
         if (!currentUser()) return;
+        if (payload?.eventType === "INSERT" && payload.new) {
+          const row = payload.new;
+          if (row.added_by && row.added_by !== currentUser()?.id) {
+            const grp = state.groups.find((g) => g.id === row.group_id);
+            if (grp) {
+              handleIncomingNotification({
+                id: createId("notif"),
+                dedupKey: `add-${row.id}`,
+                type: "product_added",
+                title: "Producto agregado",
+                message: `${row.added_by_name || "Un miembro"} agregó "${row.name}" en la lista "${grp.name}"`,
+                actorId: row.added_by,
+                actorName: row.added_by_name || "Un miembro",
+                targetId: row.id,
+                targetName: row.name,
+                groupId: grp.id,
+                groupName: grp.name,
+                timestamp: row.created_at || new Date().toISOString(),
+                read: false,
+              });
+            }
+          }
+        }
         await loadAppData();
         render();
       }
@@ -786,8 +1212,31 @@ function setupRealtimeSubscription() {
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: MEMBERS_TABLE },
-      async () => {
+      async (payload) => {
         if (!currentUser()) return;
+        if (payload?.eventType === "INSERT" && payload.new) {
+          const row = payload.new;
+          if (row.user_id && row.user_id !== currentUser()?.id) {
+            const grp = state.groups.find((g) => g.id === row.group_id);
+            if (grp) {
+              handleIncomingNotification({
+                id: createId("notif"),
+                dedupKey: `join-${row.group_id}-${row.user_id}`,
+                type: "member_joined",
+                title: "Nuevo miembro",
+                message: `${row.user_name || "Un nuevo miembro"} se unió a la lista "${grp.name}"`,
+                actorId: row.user_id,
+                actorName: row.user_name || "Un miembro",
+                targetId: row.user_id,
+                targetName: row.user_name,
+                groupId: grp.id,
+                groupName: grp.name,
+                timestamp: row.joined_at || new Date().toISOString(),
+                read: false,
+              });
+            }
+          }
+        }
         await loadAppData();
         render();
       }
@@ -887,7 +1336,7 @@ async function loadAppData() {
       const migrated = await migrateLocalDataIfAny(user);
       if (migrated) return;
 
-      state = { users: [user], groups: [], uiNotice: state.uiNotice || "" };
+      state = { users: [user], groups: [], notifications: (state.notifications && state.notifications.length) ? state.notifications : loadStoredNotifications(), uiNotice: state.uiNotice || "" };
       session.groupId = null;
       persist();
       return;
@@ -938,6 +1387,8 @@ async function loadAppData() {
       }
     });
 
+    const currentNotifs = (state.notifications && state.notifications.length) ? state.notifications : loadStoredNotifications();
+
     state = {
       users: [...usersById.values()],
       groups: groups.map((group) => groupFromRow(
@@ -945,8 +1396,43 @@ async function loadAppData() {
         membersByGroup.get(group.id) || [],
         (productsByGroup.get(group.id) || []).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
       )),
+      notifications: currentNotifs,
       uiNotice: state.uiNotice || "",
     };
+
+    // Historial inicial si el usuario no tiene notificaciones guardadas
+    if (!state.notifications || state.notifications.length === 0) {
+      const initialNotifs = [];
+      state.groups.forEach((g) => {
+        if (g.type === "shared") {
+          g.products.forEach((p) => {
+            if (p.addedBy && p.addedBy !== user.id) {
+              initialNotifs.push({
+                id: createId("notif"),
+                dedupKey: `add-${p.id}`,
+                type: "product_added",
+                title: "Producto agregado",
+                message: `${p.addedByName || "Un miembro"} agregó "${p.name}" en la lista "${g.name}"`,
+                actorId: p.addedBy,
+                actorName: p.addedByName || "Un miembro",
+                targetId: p.id,
+                targetName: p.name,
+                groupId: g.id,
+                groupName: g.name,
+                timestamp: p.createdAt || g.createdAt || new Date().toISOString(),
+                read: true,
+              });
+            }
+          });
+        }
+      });
+      if (initialNotifs.length > 0) {
+        initialNotifs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        state.notifications = initialNotifs.slice(0, 50);
+        saveNotifications();
+      }
+    }
+    updateNotificationBadge();
 
     if (session.groupId && !state.groups.some((group) => group.id === session.groupId)) {
       session.groupId = state.groups[0]?.id || null;
@@ -1139,7 +1625,7 @@ async function createUser(email, password, profile = {}) {
         name: clean(profile.name) || "Usuario",
         birthdate: clean(profile.birthdate) || null,
       },
-      emailRedirectTo: `${location.origin}${location.pathname}`,
+      emailRedirectTo: PRODUCTION_URL,
     },
   });
 
@@ -1183,6 +1669,10 @@ async function signOut() {
   // Limpiar la caché y tiempo real
   cachedSupabaseUser = null;
   cleanupRealtimeSubscription();
+
+  // Limpiar notificaciones en memoria
+  state.notifications = [];
+  updateNotificationBadge();
 
   session = { userId: null, groupId: null, remember: false };
   currentView = "home";
@@ -1286,6 +1776,27 @@ async function upsertProduct(product) {
     supabaseClient.from(PRODUCTS_TABLE).upsert(productToRow(base), { onConflict: "id" }),
     "No se pudo guardar el producto."
   );
+
+  // Broadcast notification for new products in shared lists
+  if (index < 0 && group.type === "shared" && user) {
+    const notif = {
+      id: createId("notif"),
+      dedupKey: `add-${base.id}`,
+      type: "product_added",
+      title: "Producto agregado",
+      message: `${getUserDisplayName(user)} agregó "${base.name}" en la lista "${group.name}"`,
+      actorId: user.id,
+      actorName: getUserDisplayName(user),
+      targetId: base.id,
+      targetName: base.name,
+      groupId: group.id,
+      groupName: group.name,
+      timestamp: new Date().toISOString(),
+      read: false,
+    };
+    broadcastGroupNotification(notif);
+  }
+
   persist();
 }
 
@@ -1309,6 +1820,26 @@ async function setStatus(id, status) {
       supabaseClient.from(PRODUCTS_TABLE).upsert(productToRow(changedProduct), { onConflict: "id" }),
       "No se pudo actualizar el estado."
     );
+    // Broadcast status change in shared lists
+    if (group.type === "shared" && currentUser()) {
+      const user = currentUser();
+      const statusLabel = STATUSES[status]?.label || status;
+      broadcastGroupNotification({
+        id: createId("notif"),
+        dedupKey: `status-${changedProduct.id}-${status}-${Date.now()}`,
+        type: "product_status",
+        title: "Estado actualizado",
+        message: `${getUserDisplayName(user)} cambió "${changedProduct.name}" a "${statusLabel}" en la lista "${group.name}"`,
+        actorId: user.id,
+        actorName: getUserDisplayName(user),
+        targetId: changedProduct.id,
+        targetName: changedProduct.name,
+        groupId: group.id,
+        groupName: group.name,
+        timestamp: new Date().toISOString(),
+        read: false,
+      });
+    }
   }
   persist();
   render();
@@ -1343,6 +1874,27 @@ async function markBought(ids) {
       supabaseClient.from(PRODUCTS_TABLE).upsert(changedProducts.map(productToRow), { onConflict: "id" }),
       "No se pudo marcar la compra."
     );
+    // Broadcast bought in shared lists
+    const group = getCurrentGroup();
+    if (group && group.type === "shared" && currentUser()) {
+      const user = currentUser();
+      const names = changedProducts.map((p) => `"${p.name}"`).join(", ");
+      broadcastGroupNotification({
+        id: createId("notif"),
+        dedupKey: `bought-${changedProducts.map((p) => p.id).join("-")}-${Date.now()}`,
+        type: "product_bought",
+        title: "Producto comprado",
+        message: `${getUserDisplayName(user)} marcó como comprado: ${names} en la lista "${group.name}"`,
+        actorId: user.id,
+        actorName: getUserDisplayName(user),
+        targetId: changedProducts[0]?.id || null,
+        targetName: changedProducts.map((p) => p.name).join(", "),
+        groupId: group.id,
+        groupName: group.name,
+        timestamp: new Date().toISOString(),
+        read: false,
+      });
+    }
   }
   persist();
 }
@@ -1545,6 +2097,27 @@ function render() {
   if (currentView === "inventory") renderInventory();
   if (currentView === "shopping") renderShopping();
   if (currentView === "list-detail") renderListDetail();
+  if (currentView === "notifications") {
+    renderNotifications();
+    // Wire buttons after render
+    requestAnimationFrame(() => {
+      document.querySelector("#mark-all-read-btn")?.addEventListener("click", () => { markAllRead(); });
+      document.querySelector("#clear-notifications-btn")?.addEventListener("click", () => { clearHistory(); });
+      document.querySelectorAll(".notification-card").forEach((card) => {
+        card.addEventListener("click", () => {
+          const nid = card.dataset.notificationId;
+          if (nid) markNotificationRead(nid);
+        });
+        card.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            const nid = card.dataset.notificationId;
+            if (nid) markNotificationRead(nid);
+          }
+        });
+      });
+    });
+  }
 }
 
 function renderShell() {
@@ -2304,7 +2877,6 @@ function renderSettings() {
             </div>
           </div>
           <div class="account-actions">
-            <button class="secondary-button" type="button" data-action="install-pwa">📱 Instalar en celular</button>
             <button class="secondary-button" type="button" data-action="edit-profile">Editar perfil</button>
             <button class="secondary-button" type="button" data-action="change-password">Cambiar contraseña</button>
             <button class="danger-button logout-button" type="button" data-action="logout">Cerrar sesión</button>
@@ -2315,6 +2887,128 @@ function renderSettings() {
     </section>
   `;
   bindCommonActions();
+}
+
+// ------------------------------------------------------------------------------
+// Selector de tema y paleta, en un dialogo abierto desde el boton flotante.
+// El boton vive en el index (no en una vista), asi que el dialogo esta disponible
+// en toda la pagina. La eleccion se guarda y se refleja al instante.
+// ------------------------------------------------------------------------------
+function themeOptionsMarkup() {
+  const storedMode = readStoredThemeMode();
+  const activePalette = getPaletteById(getActivePalette());
+
+  const modeOptions = THEME_MODES.map((mode) => `
+    <label class="theme-option">
+      <input type="radio" name="superlist-theme-mode" value="${mode.id}" data-theme-mode-input
+        ${mode.id === storedMode ? "checked" : ""} />
+      <span class="theme-option-body"><span aria-hidden="true">${mode.icon}</span>${mode.label}</span>
+    </label>`).join("");
+
+  const paletteOptions = THEME_PALETTES.map((palette) => `
+    <label class="theme-option">
+      <input type="radio" name="superlist-theme-palette" value="${palette.id}" data-theme-palette-input
+        ${palette.id === activePalette.id ? "checked" : ""} />
+      <span class="theme-option-body">
+        <span class="theme-swatch" style="--swatch-light:${palette.light}; --swatch-dark:${palette.dark}; background:${palette.light};" aria-hidden="true"></span>
+        <span>${palette.emoji} ${escapeHtml(palette.label)}</span>
+      </span>
+    </label>`).join("");
+
+  const modeLabel = THEME_MODES.find((mode) => mode.id === storedMode)?.label || "Automático";
+  const systemNote =
+    storedMode === "auto"
+      ? `Sigue a tu dispositivo (ahora: ${getActiveThemeMode() === "dark" ? "oscuro" : "claro"}).`
+      : `Elegiste el modo ${modeLabel.toLowerCase()}.`;
+
+  return `
+    <div class="theme-preview">
+      <span class="theme-swatch" style="--swatch: var(--accent); background: var(--accent);" aria-hidden="true"></span>
+      <span class="theme-preview-text">
+        <strong>${activePalette.emoji} ${escapeHtml(activePalette.label)} · ${getActiveThemeMode() === "dark" ? "🌙 Oscuro" : "☀️ Claro"}</strong>
+        <span>${escapeHtml(systemNote)}</span>
+      </span>
+    </div>
+
+    <fieldset class="theme-group">
+      <legend class="theme-group-legend">Modo</legend>
+      <div class="theme-modes">${modeOptions}</div>
+    </fieldset>
+
+    <fieldset class="theme-group">
+      <legend class="theme-group-legend">Paleta</legend>
+      <div class="theme-palettes">${paletteOptions}</div>
+    </fieldset>
+
+    <p class="theme-hint">El verde es el color original y se aplica solo. Las demás paletas son opcionales y tu elección se guarda en este dispositivo.</p>
+  `;
+}
+
+// Vuelca los controles dentro del dialogo y engancha sus eventos.
+function renderThemeDialog() {
+  const dialog = document.querySelector("#theme-dialog");
+  if (!dialog) return;
+  dialog.innerHTML = `
+    <form method="dialog" class="theme-dialog-form">
+      <div class="dialog-head">
+        <div>
+          <p class="eyebrow">Personalización</p>
+          <h2>Tema y color</h2>
+        </div>
+        <button class="ghost-icon" type="button" data-theme-close aria-label="Cerrar">×</button>
+      </div>
+      <div class="theme-dialog-body">${themeOptionsMarkup()}</div>
+      <div class="dialog-actions">
+        <button class="primary-button" type="submit">Listo</button>
+      </div>
+    </form>`;
+  bindThemeControls();
+}
+
+function openThemeDialog() {
+  const dialog = document.querySelector("#theme-dialog");
+  if (!dialog) return;
+  renderThemeDialog();
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+
+function bindThemeControls() {
+  document.querySelectorAll("[data-theme-mode-input]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked) return;
+      setThemeMode(input.value);   // ya refresca el boton flotante
+      renderThemeDialog();
+    });
+  });
+
+  document.querySelectorAll("[data-theme-palette-input]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!input.checked) return;
+      applyPalette(input.value);   // ya refresca el boton flotante
+      renderThemeDialog();
+    });
+  });
+
+  document.querySelectorAll("[data-theme-close]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const dialog = document.querySelector("#theme-dialog");
+      if (!dialog) return;
+      if (typeof dialog.close === "function") dialog.close();
+      else dialog.removeAttribute("open");
+    });
+  });
+}
+
+// Refleja en el boton flotante el modo y la paleta que estan activos.
+function updateThemeButton() {
+  const button = document.querySelector("#theme-fab");
+  if (!button) return;
+  const dark = getActiveThemeMode() === "dark";
+  const palette = getPaletteById(getActivePalette());
+  button.setAttribute("aria-label", `Tema: ${palette.label}, ${dark ? "oscuro" : "claro"}. Cambiar`);
+  button.setAttribute("title", `Tema: ${palette.label} · ${dark ? "Oscuro" : "Claro"}`);
+  button.setAttribute("data-mode", dark ? "dark" : "light");
 }
 
 function memberRow(member, group) {
@@ -2598,9 +3292,33 @@ async function deleteProduct(id, options = {}) {
   const group = getCurrentGroup();
   if (!group) return;
 
+  // Capture product info before deletion for the broadcast
+  const deletedProduct = group.products.find((item) => item.id === id);
+
   await runSupabase(supabaseClient.from(PRODUCTS_TABLE).delete().eq("id", id), "No se pudo borrar el producto.");
   group.products = group.products.filter((item) => item.id !== id);
   selectedShoppingIds.delete(id);
+
+  // Broadcast deletion in shared lists
+  if (deletedProduct && group.type === "shared" && currentUser()) {
+    const user = currentUser();
+    broadcastGroupNotification({
+      id: createId("notif"),
+      dedupKey: `delete-${id}`,
+      type: "product_deleted",
+      title: "Producto eliminado",
+      message: `${getUserDisplayName(user)} eliminó "${deletedProduct.name}" de la lista "${group.name}"`,
+      actorId: user.id,
+      actorName: getUserDisplayName(user),
+      targetId: id,
+      targetName: deletedProduct.name,
+      groupId: group.id,
+      groupName: group.name,
+      timestamp: new Date().toISOString(),
+      read: false,
+    });
+  }
+
   persist();
 
   if (overlayState.open && overlayState.status) {
@@ -2695,6 +3413,7 @@ function escapeHtml(value) {
 // Inicialización de la aplicación y carga reactiva de datos reales desde Supabase
 async function initApp() {
   try {
+    initTheme();
     const { data: { session: currentSession } } = await supabaseClient.auth.getSession();
     await refreshCurrentUser();
 
@@ -2766,34 +3485,4 @@ if ("serviceWorker" in navigator) {
       });
   });
 }
-
-// Soporte para instalación de PWA en móviles y navegador
-let deferredInstallPrompt = null;
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
-});
-
-window.addEventListener("appinstalled", () => {
-  deferredInstallPrompt = null;
-  showNotification("¡SuperList se instaló correctamente en tu dispositivo!", "success");
-});
-
-window.triggerInstallPWA = async function() {
-  if (deferredInstallPrompt) {
-    deferredInstallPrompt.prompt();
-    const { outcome } = await deferredInstallPrompt.userChoice;
-    if (outcome === "accepted") {
-      deferredInstallPrompt = null;
-    }
-  } else {
-    // Si no está el prompt nativo de Chromium (ej. iOS Safari o ya instalada)
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    if (isIOS) {
-      showNotification("Para instalar en iPhone: tocá el botón Compartir (icono con flecha hacia arriba) y elegí 'Agregar a pantalla de inicio'.", "info");
-    } else {
-      showNotification("Para instalar: abrí el menú (tres puntos) de tu navegador y elegí 'Instalar aplicación' o 'Agregar a la pantalla principal'.", "info");
-    }
-  }
-};
 
