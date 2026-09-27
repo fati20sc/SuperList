@@ -37,10 +37,32 @@ const VAPID_PUBLIC_KEY =
   "BPtAA8KmSpnIp7V6YSPp5w9Y7JOgju8S1XOewPY73_kjlZNFIxnh44ZhioDPUitDN6QMh_JOvsH19hww1rSc6uE";
 const VAPID_PRIVATE_KEY = "V03YQ4mL2MzqSuFG4V2gZfslHzRBg1Y7L4ejlrsTvgs";
 
-const token = process.env.SUPABASE_ACCESS_TOKEN;
+// El token se puede pasar de dos maneras, y las dos son validas:
+//   - variable de entorno SUPABASE_ACCESS_TOKEN
+//   - el archivo supabase-token.txt en la raiz del repo
+// Se prefiere el archivo porque asi el token no queda escrito en el historial
+// del chat ni en el comando. Ese archivo esta en el .gitignore.
+function readToken() {
+  if (process.env.SUPABASE_ACCESS_TOKEN) return process.env.SUPABASE_ACCESS_TOKEN.trim();
+
+  const file = join(root, "supabase-token.txt");
+  if (existsSync(file)) {
+    const value = readFileSync(file, "utf8").trim();
+    if (value) return value;
+  }
+
+  return null;
+}
+
+const token = readToken();
 if (!token) {
-  console.error("Falta SUPABASE_ACCESS_TOKEN.");
-  console.error("Crealo en Supabase > Account Preferences > Personal Access Tokens.");
+  console.error("No encontre un token de Supabase.");
+  console.error("");
+  console.error("Hacé una de estas dos:");
+  console.error("  1) Guardalo en el archivo supabase-token.txt (esta en el .gitignore)");
+  console.error("  2) O exportalo:  $env:SUPABASE_ACCESS_TOKEN = 'sbp_...'");
+  console.error("");
+  console.error("El token se crea en Supabase > Account Preferences > Personal Access Tokens.");
   process.exit(1);
 }
 
