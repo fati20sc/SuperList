@@ -49,3 +49,7 @@ Screenshot*.png
 
 # Temporales del CLI de Supabase
 supabase/.temp/
+
+# Secretos y temporales que nunca se suben
+supabase-token.txt
+supabase/.temp/
