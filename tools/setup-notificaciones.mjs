@@ -28,7 +28,6 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { createHmac } from "node:crypto";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT_REF = "ismweucgziipplsnkwuh";
@@ -119,73 +118,46 @@ function ok(message) {
 // sb_secret_). Se prefieren las nuevas y se cae a las viejas.
 // La Management API NO devuelve las claves secretas completas: para
 // sb_secret_ devuelve el prefijo seguido de basura binaria (se vio
-// "sb_secret_6h07a" + caracteres raros, que la gateway rechaza como
+// "sb_secret_XXXX" + caracteres raros, que la gateway rechaza como
 // "Invalid API key"). Las publishable si vienen enteras.
 //
 // Por eso en vez de usar la clave secreta se firma un JWT propio con la clave
 // de firma del proyecto, que si se puede leer. El token lleva role
 // service_role, que es lo que la gateway y la Edge Function necesitan.
-async function getApiKeys() {
-  // 1) La clave publica sale de la Management API (esa si viene entera).
-  const all = await api("GET", `/projects/${PROJECT_REF}/api-keys`);
-  const anon = all.find((k) => String(k.api_key).startsWith("sb_publishable_"))
-    || all.find((k) => k.name === "anon");
-  if (!anon?.api_key) throw new Error("El proyecto no tiene clave anon.");
+// La clave secreta del proyecto.
+//
+// OJO: la Management API NO la devuelve completa. Para sb_secret_ responde con
+// el prefijo seguido de basura binaria ("sb_secret_XXXX" + caracteres raros),
+// que la gateway rechaza como "Invalid API key". Las publishable si vienen
+// enteras. Asi que la clave hay que pasarsela a mano, de una de estas formas:
+//   - variable de entorno SUPABASE_SERVICE_ROLE_KEY
+//   - el archivo supabase-token.txt, con una linea:  SECRET_KEY=sb_secret_...
+async function getServiceKey() {
+  const fromEnv = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (fromEnv) return fromEnv;
 
-  // 2) La clave de firma sale de la propia base, con la variable que Supabase
-  // expone para eso.
-  const probes = [
-    "current_setting('app.settings.jwt_secret', true)",
-    "current_setting('pgrst.jwt_secret', true)",
-  ];
-  let jwtSecret = null;
-  for (const probe of probes) {
-    const rows = await api("POST", `/projects/${PROJECT_REF}/database/query`, {
-      query: `SELECT ${probe} AS secret`,
-    });
-    if (rows[0]?.secret) {
-      jwtSecret = rows[0].secret;
-      break;
-    }
+  const file = join(root, "supabase-token.txt");
+  if (existsSync(file)) {
+    const match = readFileSync(file, "utf8").match(/sb_secret_[A-Za-z0-9_-]+/);
+    if (match) return match[0];
   }
 
-  if (!jwtSecret) {
-    throw new Error(
-      "No se pudo leer la clave de firma del proyecto (app.settings.jwt_secret).\n" +
-      "   Es el unico dato que hace falta y no se puede leer por API. Podes copiarlo\n" +
-      "   en Supabase > Configuracion del proyecto > API > JWT Secret y ponerlo en el\n" +
-      "   archivo supabase-token.txt, asi:  JWT_SECRET=pegar-aqui-la-clave"
-    );
-  }
-
-  const service = mintServiceRoleJwt(jwtSecret);
-  console.log(`   anon: ${anon.api_key.slice(0, 20)}...`);
-  console.log(`   service: JWT con role service_role (${service.length} chars)`);
-  return { anon: anon.api_key, secret: service };
-}
-
-// Arma un JWT con role=service_role firmado con HS256.
-function mintServiceRoleJwt(jwtSecret) {
-  const header = base64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const now = Math.floor(Date.now() / 1000);
-  const payload = base64Url(
-    JSON.stringify({ role: "service_role", iss: "supabase", iat: now, exp: now + 3600 })
+  throw new Error(
+    "Falta la clave secreta del proyecto (sb_secret_...).\n" +
+    "   La Management API no la devuelve completa, asi que hay que copiarla de\n" +
+    "   Supabase > Configuracion del proyecto > API > Secret key, y ponerla en el\n" +
+    "   archivo supabase-token.txt asi:  SECRET_KEY=sb_secret_..."
   );
-  const data = `${header}.${payload}`;
-  // createHmac espera la clave cruda; si viene en base64 hay que decodificarla.
-  const rawKey = /^[A-Za-z0-9+/=]+$/.test(jwtSecret) && /[+/=]/.test(jwtSecret)
-    ? Buffer.from(jwtSecret, "base64")
-    : Buffer.from(jwtSecret, "utf8");
-  const signature = createHmac("sha256", rawKey).update(data).digest("base64url");
-  return `${data}.${signature}`;
 }
 
-function base64Url(value) {
-  return Buffer.from(value, "utf8").toString("base64url");
+async function getApiKeys() {
+  const secret = await getServiceKey();
+  console.log(`   service: ${secret.slice(0, 16)}... (${secret.length} chars)`);
+  return { secret };
 }
 
 // ---------------------------------------------------------------------------
-// 2) Migracion + vault, en una sola llamada.
+// 2) Migracion + secreto, en una sola llamada.
 // ---------------------------------------------------------------------------
 async function runMigration(keys) {
   const migration = readFileSync(join(root, "supabase_migration_pendiente.sql"), "utf8");
@@ -198,9 +170,7 @@ async function runMigration(keys) {
   // El ON CONFLICT hace que el script se pueda correr las veces que haga falta.
   const secretStatement = `
 INSERT INTO private.app_secrets (name, value)
-VALUES
-  ('SUPABASE_ANON_KEY', '${keys.anon}'),
-  ('SUPABASE_SERVICE_ROLE_KEY', '${keys.secret}')
+VALUES ('SUPABASE_SERVICE_ROLE_KEY', '${keys.secret}')
 ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, created_at = now();`;
 
   const sql = `${migration}\n${secretStatement}\n`;

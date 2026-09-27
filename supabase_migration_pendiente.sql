@@ -326,21 +326,18 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- Las claves se leen de private.app_secrets. Si todavia no estan, no se
-    -- intenta nada: es preferible no notificar a romper la escritura.
+    -- Las claves se leen de private.app_secrets. Si no esta, no se intenta
+    -- nada: es preferible no notificar a romper la escritura.
     BEGIN
         SELECT value INTO v_service_key
         FROM private.app_secrets
         WHERE name = 'SUPABASE_SERVICE_ROLE_KEY';
-        SELECT value INTO v_anon_key
-        FROM private.app_secrets
-        WHERE name = 'SUPABASE_ANON_KEY';
     EXCEPTION WHEN OTHERS THEN
         v_service_key := NULL;
     END;
 
-    IF v_service_key IS NULL OR v_anon_key IS NULL THEN
-        RAISE WARNING 'SuperList: faltan las claves del proyecto en private.app_secrets.';
+    IF v_service_key IS NULL THEN
+        RAISE WARNING 'SuperList: falta la clave en private.app_secrets.';
         RETURN NEW;
     END IF;
 
@@ -361,11 +358,13 @@ BEGIN
         url     := v_project_url || '/functions/v1/send-push',
         headers := jsonb_build_object(
             'Content-Type',  'application/json',
-            -- La clave publica va en "apikey" y el JWT con role service_role en
-            -- "Authorization". Con las dos en el mismo header la gateway
-            -- responde "Conflicting API keys".
-            'apikey',        v_anon_key,
-            'Authorization', 'Bearer ' || v_service_key
+            -- OJO: la clave va SOLO en "apikey". Probado contra este proyecto:
+            --   apikey=<sb_secret_>                        -> 200
+            --   apikey=<sb_secret_> + Authorization=<igual> -> 200
+            --   apikey=<publishable> + Authorization=<sb_secret_> -> 401
+            --       "Conflicting API keys"
+            -- Mandar la publica y la secreta en headers distintos NO anda.
+            'apikey',        v_service_key
         ),
         body    := jsonb_build_object(
             'groupId',       v_group_id,

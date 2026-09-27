@@ -198,11 +198,15 @@ Deno.serve(async (req) => {
   // conozca la URL podria mandar notificaciones a cualquier grupo.
   //
   // OJO con el header: con las claves nuevas de Supabase (sb_secret_) la clave
-  // va SOLO en "apikey". Si ademas se manda un "Authorization" con otra clave,
-  // la gateway responde "Conflicting API keys" antes de llegar aca. Por eso se
-  // valida contra "apikey" y no contra "Authorization".
+  // va SOLO en "apikey". Probado en este proyecto:
+  //   apikey=<sb_secret_>                          -> 200
+  //   apikey=<publishable> + Authorization=<secret> -> 401 "Conflicting API keys"
+  // Por eso se acepta cualquiera de los dos headers, pero se exige que el valor
+  // sea la clave de servicio.
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const providedKey = req.headers.get("apikey") || "";
+  const fromApiKey = req.headers.get("apikey") || "";
+  const fromAuth = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  const providedKey = fromApiKey || fromAuth;
   if (serviceRole && providedKey !== serviceRole) {
     return json({ error: "No autorizado" }, 401);
   }
