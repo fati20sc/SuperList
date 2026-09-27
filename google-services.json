@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "936621422008",
+    "project_id": "superlist-cd51a",
+    "storage_bucket": "superlist-cd51a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:936621422008:android:e5738d22bd263edb758b4d",
+        "android_client_info": {
+          "package_name": "com.rosario.superlist"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCWWOYoXg8iIWlVkl4n238dVOBVzTGcXK4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
