@@ -10,6 +10,7 @@ const RULES = [
   ['src="./SUPERMERCADO.png"', 'src="./SUPERMERCADO.webp"'],
   ['href="./logo.png" type="image/png"', 'href="./logo.webp" type="image/webp"'],
   ['"./app-icon.png"', '"./app-icon.webp"'],
+  ['"./app-icon-192.png"', '"./app-icon-192.webp"'],
   ['"./logo.png"', '"./logo.webp"'],
   ['"./logo-512.png"', '"./logo-512.webp"'],
   ['"./SUPERMERCADO.png"', '"./SUPERMERCADO.webp"'],

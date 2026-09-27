@@ -41,12 +41,15 @@ jobs:
           node tests/test_invite_code.js
           node tests/test_click_handler.js
 
-      # La app principal vive en la raiz del repo.
-      # Se arma www/ con los archivos estaticos de ahi.
+      # Solo viajan al APK los .webp (livianos). Los .png quedan en la raiz del
+      # repo porque el paso de iconos de Android los necesita, pero no se
+      # empaquetan en www/ porque la app no los referencia.
       - name: Prepare web assets
         run: |
           mkdir -p www
-          cp index.html app.js styles.css sw.js manifest.json *.webp *.png *.jpg www/ 2>/dev/null || true
+          cp index.html app.js styles.css sw.js manifest.json *.webp pensando.jpg www/ 2>/dev/null || true
+          echo "--- contenido de www/ ---"
+          ls -la www/
 
       - name: Install dependencies
         run: |

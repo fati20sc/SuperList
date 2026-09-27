@@ -13,6 +13,7 @@ const TARGETS = [
   { file: "logo.png", quality: 85 },
   { file: "superlist.png", quality: 85 },
   { file: "app-icon.png", quality: 90 },
+  { file: "app-icon-192.png", quality: 90 },
   { file: "logo-512.png", quality: 90 },
 ];
 
