@@ -64,6 +64,15 @@ console.log("\n2) MIS LISTAS: boton Miembros");
   fn(...Object.values(sandbox))();
   check("tiene data-action=open-members", html.includes('data-action="open-members"'));
   check("lleva el data-id de la lista", html.includes('data-id="g1"'));
+  check("los 4 botones usan list-action", (html.match(/class="list-action /g) || []).length === 4);
+  check("Abrir con list-action-open", html.includes("list-action list-action-open"));
+  check("Editar con list-action-edit", html.includes("list-action list-action-edit"));
+  check("Miembros con list-action-members", html.includes("list-action list-action-members"));
+  check("Borrar con list-action-delete", html.includes("list-action list-action-delete"));
+  // secondary-button sigue apareciendo en el boton "Unirse con codigo", que esta
+  // fuera de la tarjeta; lo que no debe quedar es ninguno en los 4 botones.
+  check("ningun boton de la tarjeta usa secondary-button (era gris)",
+    !/class="[^"]*product-actions[^"]*"[\s\S]{0,600}secondary-button/.test(html));
 }
 
 console.log("\n3) Solicitudes pendientes: solo admin");

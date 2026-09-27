@@ -883,6 +883,102 @@ h3 {
   justify-content: flex-end;
 }
 
+/* Acciones de la tarjeta de lista en "Mis listas" (Abrir / Editar / Miembros /
+   Borrar). Antes usaban .secondary-button, que es gris (--surface-3) y se perdia
+   contra el fondo. Ahora cada una tiene su peso visual y toma los colores del
+   tema activo, asi que acompanana la paleta y el modo claro/oscuro. */
+.list-actions {
+  gap: 6px;
+}
+
+.list-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.list-action:hover {
+  transform: translateY(-1px);
+}
+
+.list-action:active {
+  transform: translateY(0);
+}
+
+.list-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Abrir: la accion principal de la tarjeta, va solida. */
+.list-action-open {
+  color: var(--on-solid);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.list-action-open:hover {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+
+/* Editar: secundaria, delineada con el acento. */
+.list-action-edit {
+  color: var(--accent-ink);
+  background: transparent;
+  border-color: var(--accent);
+}
+
+.list-action-edit:hover {
+  color: var(--on-solid);
+  background: var(--accent);
+}
+
+/* Miembros: fondo suave del acento, sin borde. */
+.list-action-members {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.list-action-members:hover {
+  color: var(--on-solid);
+  background: var(--accent);
+}
+
+/* Borrar: unica accion destructiva, por eso va en color de peligro. */
+.list-action-delete {
+  color: var(--danger-ink);
+  background: transparent;
+  border-color: var(--danger-ink);
+}
+
+.list-action-delete:hover {
+  background: var(--danger-bg);
+}
+
+/* En pantallas chicas los botones ocupan el ancho de la tarjeta. */
+@media (max-width: 780px) {
+  .list-actions {
+    justify-content: stretch;
+  }
+
+  .list-actions .list-action {
+    flex: 1 1 auto;
+  }
+}
+
 .status-tengo {
   background: var(--st-tengo);
   color: var(--st-tengo-text);
@@ -1356,9 +1452,32 @@ h3 {
   font-size: 0.95rem;
 }
 
+/* El cuerpo del dialogo scrollea si hay muchas solicitudes o miembros, en vez
+   de empujar el boton de cerrar fuera de la pantalla. */
+#members-dialog-body {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+#members-dialog-body .requests-block + .requests-block {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+#members-dialog-body .product-list {
+  gap: 8px;
+}
+
+#members-dialog-body .invite-box-hint {
+  margin: 0;
+}
+
 .request-card {
   border-style: dashed;
   border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .search-input,

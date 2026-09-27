@@ -3122,13 +3122,15 @@ function renderLists() {
                 <p class="pending-requests-badge">${pendingRequestsFor(group).length} solicitud${pendingRequestsFor(group).length === 1 ? "" : "es"} pendiente${pendingRequestsFor(group).length === 1 ? "" : "s"}</p>
                 ` : ""}
               </div>
-              <div class="product-actions compact-actions">
-                <button class="secondary-button" type="button" data-action="select-list" data-id="${group.id}">Abrir</button>
-                <button class="secondary-button" type="button" data-action="edit-group" data-id="${group.id}"
+              <div class="product-actions compact-actions list-actions">
+                <button class="list-action list-action-open" type="button" data-action="select-list" data-id="${group.id}"
+                        aria-label="Abrir ${escapeHtml(group.name)}">Abrir</button>
+                <button class="list-action list-action-edit" type="button" data-action="edit-group" data-id="${group.id}"
                         aria-label="Editar ${escapeHtml(group.name)}">Editar</button>
-                <button class="secondary-button" type="button" data-action="open-members" data-id="${group.id}"
+                <button class="list-action list-action-members" type="button" data-action="open-members" data-id="${group.id}"
                         aria-label="Ver miembros de ${escapeHtml(group.name)}">Miembros</button>
-                ${memberRole(group) === "admin" ? `<button class="danger-button danger-inline" type="button" data-action="delete-list" data-id="${group.id}">Borrar</button>` : ""}
+                ${memberRole(group) === "admin" ? `<button class="list-action list-action-delete" type="button" data-action="delete-list" data-id="${group.id}"
+                        aria-label="Borrar ${escapeHtml(group.name)}">Borrar</button>` : ""}
               </div>
             </article>
           `).join("") : empty("Todavía no tenés listas. Creá la primera.")}
@@ -3438,10 +3440,10 @@ function openMembersDialog(group) {
                 </div>
               </div>
               <div class="product-actions compact-actions">
-                <button class="code-button code-button-copy" type="button" data-action="approve-request"
+                <button class="list-action list-action-open" type="button" data-action="approve-request"
                         data-request-id="${escapeHtml(request.id)}"
                         aria-label="Aceptar a ${escapeHtml(request.name)}">Aceptar</button>
-                <button class="danger-button danger-inline" type="button" data-action="reject-request"
+                <button class="list-action list-action-delete" type="button" data-action="reject-request"
                         data-request-id="${escapeHtml(request.id)}"
                         aria-label="Rechazar a ${escapeHtml(request.name)}">Rechazar</button>
               </div>

@@ -30,7 +30,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,100..900;1,100..900&family=Reddit+Sans:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=11" />
+    <link rel="stylesheet" href="./styles.css?v=12" />
   </head>
   <body>
     <div class="app-shell">
@@ -331,18 +331,23 @@
       </form>
     </dialog>
 
+    <!-- El contenido va dentro de un <form method="dialog"> como en los demas
+         dialogos: de ahi salen el padding, el grid y el gap. Sin el, el
+         contenido queda pegado al borde y sin separacion. -->
     <dialog id="members-dialog" class="dialog">
-      <div class="dialog-head">
-        <div>
-          <p class="eyebrow" id="members-dialog-eyebrow">Lista compartida</p>
-          <h2 id="members-dialog-title">Miembros</h2>
+      <form method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow" id="members-dialog-eyebrow">Lista compartida</p>
+            <h2 id="members-dialog-title">Miembros</h2>
+          </div>
+          <button class="ghost-icon" id="members-dialog-close" type="button" aria-label="Cerrar">×</button>
         </div>
-        <button class="ghost-icon" id="members-dialog-close" type="button" aria-label="Cerrar">×</button>
-      </div>
-      <div id="members-dialog-body" class="stack-form"></div>
-      <div class="dialog-actions">
-        <button class="secondary-button" id="members-dialog-cancel" type="button">Cerrar</button>
-      </div>
+        <div id="members-dialog-body" class="stack-form"></div>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="members-dialog-cancel" type="button">Cerrar</button>
+        </div>
+      </form>
     </dialog>
 
     <!-- El tema se cambia desde Inicio y desde Mi cuenta. No hay boton flotante
@@ -351,6 +356,6 @@
 
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./app.js?v=11"></script>
+    <script src="./app.js?v=12"></script>
   </body>
 </html>
