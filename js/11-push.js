@@ -21,7 +21,7 @@
 // Clave pública VAPID. La privada NUNCA va en el cliente: va como secreto de la
 // Edge Function de Supabase (SUPABASE_VAPID_PRIVATE_KEY).
 const VAPID_PUBLIC_KEY =
-  "BMWbyf8ih805R5wI_NtowQSO0Xuxc8YvGWl2eI1wX4nHapw35n8RvjEVFTK_MOwiAnGnM4r6rKJdZP624qMarEU";
+  "BPtAA8KmSpnIp7V6YSPp5w9Y7JOgju8S1XOewPY73_kjlZNFIxnh44ZhioDPUitDN6QMh_JOvsH19hww1rSc6uE";
 const PUSH_TABLE = "push_subscriptions";
 
 // Convierte la clave VAPID (base64url) al formato que espera la API.

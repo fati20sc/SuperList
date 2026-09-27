@@ -48,7 +48,7 @@ const VAPID_PRIVATE_KEY = Deno.env.get("SUPABASE_VAPID_PRIVATE_KEY");
 // web-push la necesita para armar la cabecera de autenticación del push.
 // Tiene que ser el mismo par de claves que la del cliente.
 const VAPID_PUBLIC_KEY_HINT =
-  "BMWbyf8ih805R5wI_NtowQSO0Xuxc8YvGWl2eI1wX4nHapw35n8RvjEVFTK_MOwiAnGnM4r6rKJdZP624qMarEU";
+  "BPtAA8KmSpnIp7V6YSPp5w9Y7JOgju8S1XOewPY73_kjlZNFIxnh44ZhioDPUitDN6QMh_JOvsH19hww1rSc6uE";
 
 // Firebase es opcional: si no estan los secretos, la funcion sigue mandando
 // por Web Push y solo se saltea el APK.

@@ -2,6 +2,12 @@ node_modules/
 outputs/mi-casa/node_modules/
 .DS_Store
 
+# Credenciales de Firebase: dan acceso total a la cuenta de Firebase, asi que
+# jamas pueden subirse. El archivo lo baja la persona desde la consola y vive
+# solo en esta maquina. setup-notificaciones.mjs lo lee si existe.
+firebase-service-account.json
+*service-account*.json
+
 # El proyecto de Android lo genera el workflow con "npx cap add android".
 # No tiene sentido versionarlo: se reconstruye en cada build.
 android/
