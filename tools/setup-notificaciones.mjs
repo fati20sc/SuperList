@@ -342,6 +342,52 @@ async function main() {
     console.log("   El circuito completo funciona: trigger -> Edge Function -> respuesta.");
   }
 
+  // Prueba del canal de Android: se mete un token FCM falso y se ve que
+  // responde la API de Google. Si el JWT estuviera mal firmado, Google
+  // devolveria 401/403 y el token ni se limpiaria; si la autenticacion esta
+  // bien, responde que el token no existe (INVALID_ARGUMENT / NOT_FOUND), que
+  // es exactamente lo que tiene que pasar.
+  const fakeToken = "fcm-token-de-prueba-para-verificar-la-autenticacion";
+  const members = await api(
+    "POST",
+    `/projects/${PROJECT_REF}/database/query`,
+    {
+      query: `SELECT user_id FROM shopping_group_members
+        WHERE group_id = '${groupId}' LIMIT 1`,
+    }
+  );
+
+  if (members.length) {
+    await api("POST", `/projects/${PROJECT_REF}/database/query`, {
+      query: `INSERT INTO device_tokens (user_id, token, platform)
+              VALUES ('${members[0].user_id}', '${fakeToken}', 'android')
+              ON CONFLICT (user_id, token) DO NOTHING`,
+    });
+    console.log("   Se registro un token FCM de prueba.");
+
+    await api("POST", `/projects/${PROJECT_REF}/database/query`, {
+      query: `INSERT INTO shopping_products (id, group_id, name, category, status, added_by_name)
+              VALUES ('${testId}-fcm', '${groupId}', 'Producto prueba FCM', 'Otros', 'falta', 'Prueba')`,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 14000));
+
+    const fcmResult = await api(
+      "POST",
+      `/projects/${PROJECT_REF}/database/query`,
+      { query: "SELECT status_code, content FROM net._http_response ORDER BY created DESC LIMIT 1" }
+    );
+    console.log(`   Respuesta con token de Android: HTTP ${fcmResult[0].status_code}`);
+    console.log(`   ${fcmResult[0].content}`);
+
+    // Limpieza del token de prueba.
+    await api("POST", `/projects/${PROJECT_REF}/database/query`, {
+      query: `DELETE FROM device_tokens WHERE token = '${fakeToken}'`,
+    });
+    await api("POST", `/projects/${PROJECT_REF}/database/query`, {
+      query: `DELETE FROM shopping_products WHERE id = '${testId}-fcm'`,
+    });
+  }
+
   // Limpieza: el producto de prueba no debe quedar en la lista de la familia.
   await api("POST", `/projects/${PROJECT_REF}/database/query`, {
     query: `DELETE FROM shopping_products WHERE id = '${testId}'`,
