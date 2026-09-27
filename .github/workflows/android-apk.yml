@@ -48,12 +48,15 @@ jobs:
           echo "--- contenido de www/ ---"
           ls -la www/
 
+      # OJO: estas versiones tienen que existir. Si una no existe, npm install
+      # falla entero y el build se cae en los tests, que es el primer paso que
+      # usa package.json. Se fijaron contra las ultimas 6.x publicadas.
       - name: Install dependencies
         run: |
           npm install --no-save \
             @capacitor/core@^6.1.2 @capacitor/android@^6.1.2 @capacitor/cli@^6.1.2 \
             @capacitor/app@^6.0.2 @capacitor/local-notifications@^6.1.1 \
-            @capacitor/push-notifications@^6.2.1
+            @capacitor/push-notifications@^6.0.5
 
       - name: Initialize Capacitor Android
         run: |
