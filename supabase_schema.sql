@@ -2,8 +2,11 @@
 -- SuperList: Esquema Completo de Base de Datos para Supabase
 -- Tablas: profiles, shopping_groups, shopping_group_members, shopping_products
 -- Incluye: Triggers de perfil, RLS (Row Level Security), Políticas, Índices y Realtime
+--
+-- ESTE ARCHIVO es el esquema completo para una base nueva.
+-- Si tu base YA existe, NO lo corras entero: corré solamente
+-- supabase_migration_pendiente.sql, que es la parte que falta.
 -- ==============================================================================
-
 -- 1. Habilitar extensión para UUIDs
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
