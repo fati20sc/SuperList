@@ -604,7 +604,7 @@ function showInviteCodeMessage(inviteCode) {
       <h2 style="margin: 0 0 8px 0; color: var(--text);">¡Lista compartida creada!</h2>
       <p style="margin: 0; color: var(--text-muted);">Código de invitación</p>
     </div>
-    <div id="invite-code-display" style="background: var(--surface-3); padding: 20px; border-radius: 16px; font-size: 32px; font-weight: bold; letter-spacing: 4px; margin-bottom: 20px; cursor: pointer; user-select: all; color: var(--text); transition: all 0.2s;">${inviteCode}</div>
+    <div id="invite-code-display" style="background: var(--surface-3); padding: 20px; border-radius: 16px; font-size: 32px; font-weight: bold; letter-spacing: 4px; margin-bottom: 20px; cursor: pointer; user-select: all; color: var(--text); transition: all 0.2s;">${escapeHtml(inviteCode)}</div>
     <p style="margin: 0 0 20px 0; font-size: 14px; color: var(--text-muted);">Tocá el código para copiarlo</p>
     <button style="width: 100%; padding: 14px 24px; background: var(--accent); color: var(--on-solid); border: none; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: 600;" onclick="this.parentElement.remove()">Cerrar</button>
   `;
@@ -1073,7 +1073,11 @@ form.addEventListener("submit", async (event) => {
 deleteButton.addEventListener("click", async () => {
   const id = form.elements.id.value;
   if (!id) return;
-  await deleteProduct(id, { renderAfter: false });
+  try {
+    await deleteProduct(id, { renderAfter: false });
+  } catch (e) {
+    console.error(e);
+  }
   dialog.close();
   render();
 });
@@ -1081,7 +1085,11 @@ deleteButton.addEventListener("click", async () => {
 markBoughtForm.addEventListener("click", async () => {
   const id = form.elements.id.value;
   if (!id) return;
-  await markBought([id]);
+  try {
+    await markBought([id]);
+  } catch (e) {
+    console.error(e);
+  }
   dialog.close();
   render();
 });
@@ -1764,7 +1772,17 @@ function openEmojiPicker(input) {
   const field = input.closest(".emoji-field") || input.parentElement;
   (field || document.body).appendChild(picker);
 
-  const close = () => picker.remove();
+  // El listener de "click afuera" se registra en document, asi que hay que
+  // sacarlo al cerrar. Antes se olvidaba y cada apertura sumaba un listener
+  // permanente que ademas mantenia vivo el nodo ya desconectado.
+  let outsideHandler = null;
+  const close = () => {
+    if (outsideHandler) {
+      document.removeEventListener("click", outsideHandler, true);
+      outsideHandler = null;
+    }
+    picker.remove();
+  };
   picker.querySelector(".emoji-picker-close")?.addEventListener("click", close);
 
   picker.addEventListener("click", (event) => {
@@ -1776,9 +1794,12 @@ function openEmojiPicker(input) {
   });
 
   setTimeout(() => {
-    document.addEventListener("click", (event) => {
+    // Si el picker se cerro antes de que corra este timeout, no se registra nada.
+    if (!picker.isConnected) return;
+    outsideHandler = (event) => {
       if (!picker.contains(event.target) && event.target !== input) close();
-    });
+    };
+    document.addEventListener("click", outsideHandler, true);
   }, 0);
 }
 
@@ -2699,71 +2720,6 @@ function renderAuth() {
   setAuthMode("signin");
 }
 
-function renderGroupStart() {
-  app.innerHTML = `
-    <section class="group-start">
-      <div class="hero-band">
-        <div>
-          <h2>¿Cómo querés empezar?</h2>
-          <p>Creá una lista individual o un espacio compartido. Cada lista tiene su propio inventario y sus categorías.</p>
-        </div>
-        <img class="hero-illustration" src="./logo.png" alt="Logo de SuperList" />
-      </div>
-      <div class="two-panels">
-        <section class="panel">
-          <h2>Crear lista individual</h2>
-          <form class="stack-form" data-group-form="create-individual">
-            <label class="field">
-              <span>Nombre</span>
-              <input name="name" placeholder="Mercado" required />
-            </label>
-            <label class="field emoji-field">
-              <span>Emoji</span>
-              <input name="emoji" class="emoji-input" placeholder="🛒" value="🛒" />
-            </label>
-            <button class="primary-button" type="submit">Crear lista</button>
-          </form>
-        </section>
-        <section class="panel">
-          <h2>Crear espacio compartido</h2>
-          <form class="stack-form" data-group-form="create-shared">
-            <label class="field">
-              <span>Nombre</span>
-              <input name="name" placeholder="Casa" required />
-            </label>
-            <label class="field emoji-field">
-              <span>Emoji</span>
-              <input name="emoji" class="emoji-input" placeholder="🏠" value="🏠" />
-            </label>
-            <button class="secondary-button" type="submit">Crear espacio</button>
-          </form>
-        </section>
-      </div>
-    </section>
-  `;
-
-  const individualForm = document.querySelector("[data-group-form='create-individual']");
-  const sharedForm = document.querySelector("[data-group-form='create-shared']");
-  if (individualForm?.elements.emoji) bindEmojiOnlyInput(individualForm.elements.emoji);
-  if (sharedForm?.elements.emoji) bindEmojiOnlyInput(sharedForm.elements.emoji);
-
-  individualForm?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    await createGroup(form.elements.name.value, form.elements.emoji.value, { type: "individual" });
-    currentView = "home";
-    render();
-  });
-
-  sharedForm?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    const newGroup = await createGroup(form.elements.name.value, form.elements.emoji.value, { type: "shared" });
-    showInviteCodeMessage(newGroup?.inviteCode);
-    currentView = "home";
-    render();
-  });
-}
 
 function renderHome() {
   const currentGroup = getCurrentGroup();
@@ -4007,7 +3963,7 @@ if ("serviceWorker" in navigator) {
           if (installingWorker) {
             installingWorker.onstatechange = () => {
               if (installingWorker.state === "installed" && navigator.serviceWorker.controller) {
-                console.log("Nueva versión de SuperList disponible en caché.");
+                console.info("Nueva versión de SuperList disponible en caché.");
               }
             };
           }

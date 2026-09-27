@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "description": "SuperList - Lista de compras inteligente y compartida para la familia",
+  "scripts": {
+    "test": "node tests/test_render_settings.js && node tests/test_invite_code.js && node tests/test_click_handler.js",
+    "audit": "node tests/audit.js",
+    "serve": "node server.js"
+  },
   "dependencies": {
     "@capacitor/core": "^6.1.2",
     "@capacitor/android": "^6.1.2",
