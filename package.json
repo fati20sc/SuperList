@@ -8,7 +8,8 @@
     "split": "node tools/split.js",
     "headers": "node tools/split-views.js",
     "images": "node tools/optimize-images.js && node tools/switch-to-webp.js",
-    "test": "vitest run",
+    "test": "vitest run && node tools/check-sql.js",
+    "check:sql": "node tools/check-sql.js",
     "audit": "node tests/audit.js",
     "serve": "node server.js"
   },

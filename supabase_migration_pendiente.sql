@@ -214,3 +214,168 @@ END $$;
 --      c) La Edge Function send-push tiene que poder enviar a device_tokens.
 --    En el navegador y en la PWA sigue mandando VAPID como siempre.
 -- ==============================================================================
+
+-- ==============================================================================
+-- 5) TRIGGER QUE MANDA LAS NOTIFICACIONES DE VERDAD
+-- ==============================================================================
+-- Aca se cierra el circuito: hasta ahora la Edge Function send-push existia
+-- pero nadie la llamaba. Con esto, cada vez que alguien toca la lista
+-- compartida, la base le manda el aviso a los demas.
+--
+-- COMO FUNCIONA: el trigger llama por HTTP a la Edge Function usando pg_net,
+-- que hace la peticion en segundo plano y no traba la escritura del producto.
+-- La funcion es la que busca a quien tiene notificaciones y envia.
+--
+-- REQUISITOS, EN ESTE ORDEN:
+--   1) Correr ESTE archivo (crea el trigger).
+--   2) Desplegar la Edge Function send-push.
+--   3) Guardar el service_role en el vault (linea comentada mas abajo).
+--   Sin el paso 3 el trigger no manda nada, pero tampoco rompe la app.
+-- ==============================================================================
+
+CREATE EXTENSION IF NOT EXISTS pg_net;
+CREATE EXTENSION IF NOT EXISTS vault WITH SCHEMA vault;
+
+
+-- ------------------------------------------------------------------------------
+-- El trigger que arma el aviso y lo manda.
+--
+-- Va sobre shopping_products porque ahi esta todo lo que le importa a la
+-- familia: que se agrego algo, que se marco como comprado, que se borro.
+-- ------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.notify_list_activity()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_group_id    TEXT;
+    v_author      UUID;
+    v_author_name TEXT;
+    v_group_name  TEXT;
+    v_group_emoji TEXT;
+    v_group_type  TEXT;
+    v_body        TEXT;
+    v_product     TEXT;
+    v_new_status  TEXT;
+    v_old_status  TEXT;
+    v_service_key TEXT;
+    v_project_url TEXT := 'https://ismweucgziipplsnkwuh.supabase.co';
+BEGIN
+    -- OJO, esto parece un detalle y no lo es: en un trigger DELETE el registro
+    -- NEW NO ESTA ASIGNADO, y tocarlo tira "record new is not assigned yet".
+    -- Un COALESCE(NEW.group_id, OLD.group_id) parece seguro pero revienta en
+    -- cada borrado. Por eso hay que preguntar por TG_OP antes de leer.
+    IF TG_OP = 'DELETE' THEN
+        v_group_id    := OLD.group_id;
+        v_author      := COALESCE(OLD.added_by, OLD.updated_by);
+        v_author_name := COALESCE(NULLIF(OLD.added_by_name, ''), 'Alguien');
+        v_product     := OLD.name;
+        v_new_status  := NULL;
+        v_old_status  := NULL;
+    ELSE
+        v_group_id    := NEW.group_id;
+        v_author      := COALESCE(NEW.added_by, NEW.updated_by);
+        v_author_name := COALESCE(NULLIF(NEW.added_by_name, ''), 'Alguien');
+        v_product     := NEW.name;
+        v_new_status  := NEW.status;
+        v_old_status  := OLD.status;
+    END IF;
+
+    SELECT type, name, emoji INTO v_group_type, v_group_name, v_group_emoji
+    FROM public.shopping_groups WHERE id = v_group_id;
+
+    -- Las listas individuales no tienen a quien avisar.
+    IF v_group_type IS DISTINCT FROM 'shared' THEN
+        RETURN NEW;
+    END IF;
+
+    -- Con una sola persona en la lista no vale la pena molestar.
+    IF (SELECT count(*) FROM public.shopping_group_members WHERE group_id = v_group_id) < 2 THEN
+        RETURN NEW;
+    END IF;
+
+    -- El service_role se lee del vault. Si todavia no esta guardado, no se
+    -- intenta nada: es preferible no notificar a romper la escritura.
+    BEGIN
+        SELECT secret INTO v_service_key
+        FROM vault.decrypted_secrets
+        WHERE name = 'SUPABASE_SERVICE_ROLE_KEY';
+    EXCEPTION WHEN OTHERS THEN
+        v_service_key := NULL;
+    END;
+
+    IF v_service_key IS NULL THEN
+        RAISE WARNING 'SuperList: falta SUPABASE_SERVICE_ROLE_KEY en el vault.';
+        RETURN NEW;
+    END IF;
+
+    -- Traducir la operacion a algo que se entienda. Se usan las variables que
+    -- se copiaron arriba, no NEW/OLD directos, por el tema del trigger DELETE.
+    IF TG_OP = 'DELETE' THEN
+        v_body := v_author_name || ' borro "' || v_product || '"';
+    ELSIF v_new_status IS DISTINCT FROM v_old_status THEN
+        v_body := v_author_name || ' cambio "' || v_product || '" a ' || v_new_status;
+    ELSE
+        v_body := v_author_name || ' agrego "' || v_product || '"';
+    END IF;
+
+    -- excludeUserId: el autor no se avisa a si mismo.
+    -- El timeout se sube a 5s porque la Edge Function firma un JWT y despues
+    -- llama a Google: con el default de 1s se cortaria antes de tiempo.
+    PERFORM net.http_post(
+        url     := v_project_url || '/functions/v1/send-push',
+        headers := jsonb_build_object(
+            'Content-Type',  'application/json',
+            'Authorization', 'Bearer ' || v_service_key
+        ),
+        body    := jsonb_build_object(
+            'groupId',       v_group_id,
+            'title',         COALESCE(v_group_emoji, '') || ' ' || v_group_name,
+            'body',          v_body,
+            'url',           './',
+            'excludeUserId', v_author
+        ),
+        timeout_milliseconds := 5000
+    );
+
+    RETURN NEW;
+END;
+$$;
+
+-- AFTER, no BEFORE: el trigger no debe poder impedir la escritura del producto.
+-- Se borra antes de crear para poder correr este archivo varias veces.
+DROP TRIGGER IF EXISTS trg_list_activity_push ON public.shopping_products;
+CREATE TRIGGER trg_list_activity_push
+  AFTER INSERT OR UPDATE OR DELETE ON public.shopping_products
+  FOR EACH ROW EXECUTE FUNCTION public.notify_list_activity();
+
+
+-- ------------------------------------------------------------------------------
+-- ULTIMO PASO: corré esto UNA sola vez, en el SQL Editor, con tu clave real.
+--
+--   SELECT vault.create_secret(
+--     'PEGA_AQUI_TU_SERVICE_ROLE_KEY',
+--     'SUPABASE_SERVICE_ROLE_KEY',
+--     'SuperList: clave de servicio para mandar notificaciones'
+--   );
+--
+-- Donde se consigue la clave: Supabase > Configuracion del proyecto >
+-- API > Claves anon / service_role. Es la que dice "service_role", NO la "anon".
+--
+-- OJO: la service_role da acceso total a la base. Va en el vault de Supabase
+-- (cifrado), nunca en el codigo ni en un commit.
+-- ------------------------------------------------------------------------------
+
+-- Verificaciones. Cada una tiene que devolver 1 fila:
+--
+--   SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_list_activity_push';
+--   SELECT count(*) FROM vault.decrypted_secrets
+--     WHERE name = 'SUPABASE_SERVICE_ROLE_KEY';
+--   SELECT count(*) FROM pg_tables WHERE tablename = 'device_tokens';
+--
+-- ==============================================================================
+-- FIN DE LA MIGRACION
+-- ==============================================================================
+

@@ -87,17 +87,41 @@ lo aclara en vez de fingir que anda.
 
 ## Parte 2 — Base de datos y Edge Function (una sola vez)
 
-### Migración
+### Paso 1 — Correr la migración
 
 1. Supabase → **SQL Editor** → **New query**.
 2. Pegá todo el contenido de `supabase_migration_pendiente.sql`.
 3. **Run**.
 
-Verificá que se creó lo nuevo:
+Crea la tabla `device_tokens`, el trigger `trg_list_activity_push` y las
+extensiones `pg_net` y `vault`.
+
+### Paso 2 — Guardar la clave de servicio en el vault
+
+Supabase → **Configuración del proyecto** → **API**. Copiá la clave que dice
+**`service_role`** (no la `anon`). Después corré esto en el SQL Editor,
+pegando tu clave:
 
 ```sql
+SELECT vault.create_secret(
+  'PEGA_AQUI_TU_SERVICE_ROLE_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'SuperList: clave de servicio para mandar notificaciones'
+);
+```
+
+Esto es lo que le permite al trigger llamar a la Edge Function. Sin esta
+línea el trigger no manda nada, pero tampoco rompe la app.
+
+### Verificación
+
+Las tres tienen que dar `1`:
+
+```sql
+SELECT COUNT(*) FROM pg_trigger WHERE tgname = 'trg_list_activity_push';
+SELECT COUNT(*) FROM vault.decrypted_secrets
+  WHERE name = 'SUPABASE_SERVICE_ROLE_KEY';
 SELECT COUNT(*) FROM pg_tables WHERE tablename = 'device_tokens';
--- tiene que dar 1
 ```
 
 ### Edge Function
@@ -138,14 +162,26 @@ Si no llega, revisá en este orden:
 
 ---
 
-## Lo que todavía NO está hecho
+## Lo que falta (todo de tu lado, ~10 minutos)
 
-- **No hay trigger que llame a `send-push`.** La función existe y está
-  protegida, pero nadie la invoca automáticamente al agregar un producto. Sin
-  eso, no se manda nada: hay que llamarla a mano.
-- **La Edge Function no está desplegada.** Es un archivo en el repo, no algo
-  corriendo.
-- Falta probar en un teléfono real.
+El código está completo y validado. Estas tres cosas las tenés que hacer vos en
+las consolas, porque son credenciales:
+
+1. **Correr la migración** (arriba, Parte 2 Paso 1).
+2. **Guardar la `service_role` en el vault** (Parte 2 Paso 2).
+3. **Desplegar la Edge Function** con sus secretos (Parte 2 Paso 3).
+
+Después de eso el circuito queda cerrado y las notificaciones salen solas.
+
+**Lo que NO pude probar:** el trigger contra una base real (no hay PostgreSQL ni
+Docker en esta máquina). La sintaxis está validada con el parser oficial de
+PostgreSQL y hay tests del código JS, pero el comportamiento del trigger en la
+base de Supabase se confirma recién cuando agregás un producto y le llega el
+aviso a la otra persona.
+
+Un detalle que puede molar en el primer uso: si el producto se borra, el
+trigger también notifica. Si preferís que solo avise al agregar o cambiar el
+status, se saca esa rama del `IF TG_OP = 'DELETE'`.
 
 ---
 

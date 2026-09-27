@@ -35,8 +35,14 @@ jobs:
 
       - name: Correr los tests
         run: |
-          npm install --no-save --no-fund --no-audit vitest jsdom
+          npm install --no-save --no-fund --no-audit vitest jsdom libpg-query
           npx vitest run
+
+      # Los triggers de la migracion son la parte mas fragil: compilan bien y
+      # revientan en produccion cuando alguien toca un producto. Esto los
+      # valida con el parser real de PostgreSQL antes de publicar.
+      - name: Revisar la sintaxis del SQL
+        run: node tools/check-sql.js
 
       # Solo viajan al APK los .webp (livianos). Los .png quedan en la raiz del
       # repo porque el paso de iconos de Android los necesita, pero no se
