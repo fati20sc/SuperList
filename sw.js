@@ -1,9 +1,9 @@
-const CACHE_NAME = "superlist-v14";
+const CACHE_NAME = "superlist-v15";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=15",
-  "./app.js?v=15",
+  "./styles.css?v=16",
+  "./app.js?v=16",
   "./app-icon.webp",
   "./app-icon-192.webp",
   "./logo.webp",
@@ -14,6 +14,53 @@ const STATIC_ASSETS = [
   "./manifest.json",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
 ];
+
+// ==============================================================================
+// NOTIFICACIONES PUSH
+// Estos handlers viven acá y no en app.js a propósito: los eventos "push" y
+// "notificationclick" solo existen dentro del service worker, que es lo único
+// que sigue corriendo cuando el usuario cerró la app.
+// ==============================================================================
+self.addEventListener("push", (event) => {
+  let payload = { title: "SuperList", body: "Tenés novedades en tus listas." };
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      // Si no viene JSON, se usa el texto plano.
+      payload.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "SuperList", {
+      body: payload.body || "",
+      icon: "./app-icon-192.webp",
+      badge: "./app-icon-192.webp",
+      // El tag evita que se apilen notificaciones iguales del mismo remitente.
+      tag: payload.tag || "superlist",
+      renotify: false,
+      data: { url: payload.url || "./", groupId: payload.groupId || null },
+    })
+  );
+});
+
+// Al tocar la notificación, se abre la app en la lista relacionada.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || "./";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) {
+          client.postMessage({ type: "open", url: target });
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});
 
 // Instalar Service Worker y pre-cachear recursos estáticos
 self.addEventListener("install", (event) => {
