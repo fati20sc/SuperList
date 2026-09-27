@@ -3233,16 +3233,44 @@ function updateThemeButton() {
   entry.setAttribute("aria-label", `Personalizar el tema. Actual: ${palette.label}, ${modeText.toLowerCase()}`);
 }
 
-// Copia el codigo de invitacion al portapapeles. Reutiliza el mismo
-// navigator.clipboard que usa showInviteCodeMessage().
+// Copia el codigo de invitacion al portapapeles. Primero intenta la API
+// moderna; si no esta disponible (contexto no seguro, por ejemplo al probar
+// la app en un http local), cae a un textarea temporal con execCommand.
 async function copyInviteCode(code) {
   if (!code) return;
-  try {
-    await navigator.clipboard.writeText(code);
+  const copied = await writeToClipboard(code);
+  if (copied) {
     showNotification(`Código copiado: ${code}`, "success");
+    return;
+  }
+  showNotification(`No se pudo copiar. El código es: ${code}`, "info");
+}
+
+async function writeToClipboard(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
   } catch (error) {
-    // Si el portapapeles falla (permisos o http), al menos se lo mostramos.
-    showNotification(`No se pudo copiar. El código es: ${code}`, "info");
+    console.warn("Clipboard API no disponible:", error);
+  }
+
+  // Fallback para navegadores sin Clipboard API o sin contexto seguro.
+  try {
+    const helper = document.createElement("textarea");
+    helper.value = text;
+    helper.setAttribute("readonly", "");
+    helper.style.cssText = "position: fixed; top: -9999px; opacity: 0;";
+    document.body.appendChild(helper);
+    helper.select();
+    helper.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    helper.remove();
+    return ok;
+  } catch (error) {
+    console.warn("No se pudo copiar el codigo:", error);
+    return false;
   }
 }
 
@@ -3460,7 +3488,7 @@ function bindCommonActions() {
       if (action === "add") openProductDialog();
       if (action === "edit") openProductDialog(getProduct(id));
       if (action === "copy-invite-code") {
-        await copyInviteCode(button.dataset.code || "");
+        await copyInviteCode(element.dataset.code || "");
         event.stopPropagation();
         return;
       }
