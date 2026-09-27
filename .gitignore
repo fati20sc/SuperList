@@ -46,3 +46,6 @@ _d.txt
 
 # Capturas de pantalla de la consola
 Screenshot*.png
+
+# Temporales del CLI de Supabase
+supabase/.temp/
