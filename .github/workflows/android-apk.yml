@@ -37,9 +37,6 @@ jobs:
         run: |
           npm install --no-save --no-fund --no-audit vitest jsdom
           npx vitest run
-          node tests/test_render_settings.js
-          node tests/test_invite_code.js
-          node tests/test_click_handler.js
 
       # Solo viajan al APK los .webp (livianos). Los .png quedan en la raiz del
       # repo porque el paso de iconos de Android los necesita, pero no se

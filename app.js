@@ -441,6 +441,11 @@ function handleIncomingNotification(payload) {
 
   addNotification(payload);
   showNotification(payload.message || payload.title, "info");
+  // Si la pestaña está oculta, además del cartelito interno se muestra uno del
+  // sistema, que es lo que se ve aunque la app esté en segundo plano.
+  showSystemNotification(payload.title || "SuperList", payload.message || "", {
+    tag: payload.dedupKey || "superlist",
+  });
 }
 
 function renderNotifications() {
@@ -2349,6 +2354,11 @@ function syncCategoryChips() {
 }
 
 // =======================================================================
+// 09a-views-shell.js
+//
+// Armazon de la app: render(), menu lateral, pantalla de acceso y reinicio de contrasena.
+// =======================================================================
+// =======================================================================
 // 09-views.js
 //
 // Todas las vistas (funciones render) y sus plantillas HTML.
@@ -2779,6 +2789,11 @@ function renderAuth() {
 }
 
 
+// =======================================================================
+// 09b-views-screens.js
+//
+// Las pantallas: Inicio, Inventario, Detalle, Compras, Mis listas y Mi cuenta.
+// =======================================================================
 function renderHome() {
   const currentGroup = getCurrentGroup();
   const groups = recentGroups();
@@ -3189,6 +3204,54 @@ function renderLists() {
   bindCommonActions();
 }
 
+// Pinta el botón de notificaciones según el estado real del dispositivo.
+// Si el navegador no soporta push (por ejemplo dentro del APK), lo dice en vez
+// de prometer algo que no va a pasar.
+async function refreshPushButton() {
+  const button = document.querySelector("#push-toggle-button");
+  if (!button) return;
+  const status = await getPushStatus();
+  if (status.state === "unsupported") {
+    button.textContent = "Notificaciones no disponibles acá";
+    button.disabled = true;
+    button.title = status.reason;
+    return;
+  }
+  button.disabled = false;
+  if (status.state === "enabled") {
+    button.textContent = "Desactivar notificaciones";
+    button.title = "Las notificaciones push están activas en este dispositivo.";
+    return;
+  }
+  if (status.state === "denied") {
+    button.textContent = "Notificaciones bloqueadas";
+    button.title = status.reason;
+    return;
+  }
+  button.textContent = "Activar notificaciones";
+  button.title = "Recibí avisos aunque la app esté cerrada.";
+}
+
+// Alterna las notificaciones push según el estado actual.
+async function togglePushNotifications() {
+  const button = document.querySelector("#push-toggle-button");
+  if (button) button.disabled = true;
+
+  const status = await getPushStatus();
+  if (status.state === "enabled") {
+    await disablePushNotifications();
+    showNotification("Desactivaste las notificaciones push.", "info");
+  } else {
+    const result = await enablePushNotifications();
+    if (result.ok) {
+      showNotification("Notificaciones activadas. Vas a recibir avisos aunque la app esté cerrada.", "success");
+    } else {
+      showNotification(result.motivo, "error");
+    }
+  }
+  await refreshPushButton();
+}
+
 function renderSettings() {
   const user = currentUser();
   // Mi cuenta es solo el perfil. Las listas, sus codigos y sus miembros se
@@ -3209,6 +3272,7 @@ function renderSettings() {
           <div class="account-actions">
             <button class="secondary-button" type="button" data-action="edit-profile">Editar perfil</button>
             <button class="secondary-button" type="button" data-action="change-password">Cambiar contraseña</button>
+            <button class="secondary-button" type="button" data-action="toggle-push" id="push-toggle-button">Activar notificaciones</button>
             <button class="secondary-button" type="button" data-open-theme>Personalizar la app</button>
             <button class="danger-button logout-button" type="button" data-action="logout">Cerrar sesión</button>
           </div>
@@ -3217,6 +3281,9 @@ function renderSettings() {
     </section>
   `;
   bindCommonActions();
+  // El botón de notificaciones refleja el estado real del dispositivo, así que
+  // se actualiza recién después de pintar la vista.
+  refreshPushButton();
 }
 
 // ------------------------------------------------------------------------------
@@ -3224,6 +3291,11 @@ function renderSettings() {
 // El boton vive en el index (no en una vista), asi que el dialogo esta disponible
 // en toda la pagina. La eleccion se guarda y se refleja al instante.
 // ------------------------------------------------------------------------------
+// =======================================================================
+// 09c-views-theme.js
+//
+// Dialogo de tema y paleta: markup, apertura y binding de los controles.
+// =======================================================================
 function themeOptionsMarkup() {
   const storedMode = readStoredThemeMode();
   const activePalette = getPaletteById(getActivePalette());
@@ -3355,14 +3427,20 @@ function updateThemeButton() {
 // Copia el codigo de invitacion al portapapeles. Primero intenta la API
 // moderna; si no esta disponible (contexto no seguro, por ejemplo al probar
 // la app en un http local), cae a un textarea temporal con execCommand.
+// =======================================================================
+// 09d-views-shared.js
+//
+// Piezas compartidas entre pantallas: codigo de invitacion, miembros y tarjetas de producto.
+// =======================================================================
 async function copyInviteCode(code) {
-  if (!code) return;
+  if (!code) return false;
   const copied = await writeToClipboard(code);
   if (copied) {
     showNotification(`Código copiado: ${code}`, "success");
-    return;
+    return true;
   }
   showNotification(`No se pudo copiar. El código es: ${code}`, "info");
+  return false;
 }
 
 async function writeToClipboard(text) {
@@ -3637,6 +3715,11 @@ function marketCard(product) {
   `;
 }
 
+// =======================================================================
+// 09e-actions.js
+//
+// Delegacion de clics y acciones destructivas: borrar producto, lista y quitar miembros.
+// =======================================================================
 function bindCommonActions() {
   document.querySelectorAll("[data-action]").forEach((element) => {
     element.addEventListener("click", async (event) => {
@@ -3704,6 +3787,11 @@ function bindCommonActions() {
           if (frm.elements.birthdate) frm.elements.birthdate.value = user ? (user.birthdate || "") : "";
           dlg.showModal();
         }
+        event.stopPropagation();
+        return;
+      }
+      if (action === "toggle-push") {
+        await togglePushNotifications();
         event.stopPropagation();
         return;
       }
@@ -3915,6 +4003,11 @@ async function removeMember(userId, groupId = null) {
   if (membersDialog?.open) openMembersDialog(group);
 }
 
+// =======================================================================
+// 09f-utils-init.js
+//
+// Utilidades de render, escape de HTML e inicializacion de la app.
+// =======================================================================
 function firstEmptyState() {
   return `
     <div class="empty-state empty-large">
@@ -4015,6 +4108,51 @@ supabaseClient.auth.onAuthStateChange(async (event, currentSession) => {
 // Va ultimo porque se ejecuta cuando todo lo demas ya esta definido.
 // =======================================================================
 // ==============================================================================
+// NOTIFICACIONES PUSH
+// El service worker es el único que puede mostrar notificaciones aunque la
+// pestaña esté cerrada. Acá llegan los pushes que envía la Edge Function.
+// ==============================================================================
+self.addEventListener("push", (event) => {
+  let payload = { title: "SuperList", body: "Tenés novedades en tus listas." };
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch {
+      payload.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title || "SuperList", {
+      body: payload.body || "",
+      icon: "./app-icon-192.webp",
+      badge: "./app-icon-192.webp",
+      // El tag evita que se apilen notificaciones iguales del mismo remitente.
+      tag: payload.tag || "superlist",
+      renotify: false,
+      data: { url: payload.url || "./", groupId: payload.groupId || null },
+    })
+  );
+});
+
+// Al tocar la notificación, se abre la app en la lista relacionada.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || "./";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) {
+          client.postMessage({ type: "open", url: target });
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(target);
+    })
+  );
+});
+
+// ==============================================================================
 // Registro de Service Worker para PWA (Instalable en móviles y desktop)
 // ==============================================================================
 if ("serviceWorker" in navigator) {
@@ -4039,3 +4177,182 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+
+// =======================================================================
+// 11-push.js
+//
+// Notificaciones push (Web Push / VAPID).
+//
+// QUE RESUELVE: hasta ahora los avisos solo se veían con la app abierta, como
+// un cartelito dentro de la página. Con esto, un usuario que cerró la app
+// recibe la notificación igual que cualquier app del teléfono.
+//
+// LIMITACIÓN IMPORTANTE Y REAL: la Push API NO existe dentro de un WebView de
+// Android, que es lo que usa el APK de Capacitor. Ahí este código detecta que
+// no hay soporte y lo dice, en vez de prometer algo que no va a pasar. Para
+// que funcione dentro del APK hay que agregar notificaciones nativas con FCM
+// (plugin @capacitor/push-notifications). En el navegador y en la PWA sí
+// funciona de verdad.
+// =======================================================================
+
+// Clave pública VAPID. La privada NUNCA va en el cliente: va como secreto de la
+// Edge Function de Supabase (SUPABASE_VAPID_PRIVATE_KEY).
+const VAPID_PUBLIC_KEY =
+  "BMWbyf8ih805R5wI_NtowQSO0Xuxc8YvGWl2eI1wX4nHapw35n8RvjEVFTK_MOwiAnGnM4r6rKJdZP624qMarEU";
+const PUSH_TABLE = "push_subscriptions";
+
+// Convierte la clave VAPID (base64url) al formato que espera la API.
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) output[i] = raw.charCodeAt(i);
+  return output;
+}
+
+// Pide permiso y guarda la suscripción del dispositivo para este usuario.
+// Devuelve { ok: true } o { ok: false, motivo }.
+async function enablePushNotifications() {
+  const unsupported = pushUnsupportedReason();
+  if (unsupported) return { ok: false, motivo: unsupported };
+
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    return { ok: false, motivo: "No diste permiso para mostrar notificaciones." };
+  }
+
+  let registration;
+  try {
+    registration = await getServiceWorkerRegistration();
+  } catch (error) {
+    return { ok: false, motivo: "El service worker todavía no está listo. Recargá la app e intentá de nuevo." };
+  }
+  if (!registration) return { ok: false, motivo: "No se pudo registrar el service worker." };
+
+  let subscription;
+  try {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+  } catch (error) {
+    console.error("No se pudo crear la suscripción push:", error);
+    return { ok: false, motivo: "El navegador rechazó la suscripción push." };
+  }
+
+  const saved = await savePushSubscription(subscription);
+  if (!saved) {
+    return { ok: false, motivo: "Se activaron las notificaciones, pero no se pudieron guardar en el servidor." };
+  }
+  return { ok: true, subscription };
+}
+
+// Da de baja la suscripción de este dispositivo.
+async function disablePushNotifications() {
+  try {
+    const registration = await getServiceWorkerRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    if (subscription) await subscription.unsubscribe();
+  } catch (error) {
+    console.warn("No se pudo cancelar la suscripción local:", error);
+  }
+  const user = currentUser();
+  if (user) {
+    await supabaseClient
+      .from(PUSH_TABLE)
+      .delete()
+      .eq("user_id", user.id)
+      .then(() => {})
+      .catch((error) => console.warn(error));
+  }
+  return { ok: true };
+}
+
+// Guarda (o refresca) la suscripción en Supabase, una fila por usuario.
+async function savePushSubscription(subscription) {
+  const user = currentUser();
+  if (!user) return false;
+  const endpoint = subscription.endpoint;
+  if (!endpoint) return false;
+
+  const row = {
+    user_id: user.id,
+    endpoint,
+    p256dh: subscription.keys?.p256dh || "",
+    auth: subscription.keys?.auth || "",
+    user_agent: navigator.userAgent || "",
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabaseClient.from(PUSH_TABLE).upsert(row, { onConflict: "user_id" });
+  if (error) {
+    console.error("No se pudo guardar la suscripción push:", error);
+    showNotification("No se pudo guardar la suscripción en el servidor.", "error");
+    return false;
+  }
+  return true;
+}
+
+// Estado para pintar el botón de la interfaz.
+async function getPushStatus() {
+  const unsupported = pushUnsupportedReason();
+  if (unsupported) return { state: "unsupported", reason: unsupported };
+
+  const permission = pushPermissionState();
+  if (permission === "denied") {
+    return { state: "denied", reason: "Tenés las notificaciones bloqueadas en el navegador." };
+  }
+  if (permission !== "granted") return { state: "default", reason: "" };
+
+  try {
+    const registration = await getServiceWorkerRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    return { state: subscription ? "enabled" : "default", reason: "" };
+  } catch {
+    return { state: "default", reason: "" };
+  }
+}
+
+// Muestra una notificación del sistema aunque la app esté en segundo plano.
+// Se usa para los avisos que llegan por Realtime: si la pestaña está visible se
+// ve el cartelito de siempre, y si está oculta, uno del sistema.
+async function showSystemNotification(title, body, options = {}) {
+  if (pushPermissionState() !== "granted") return;
+  if (document.visibilityState === "visible") return;
+  try {
+    const registration = await getServiceWorkerRegistration();
+    if (!registration || typeof registration.showNotification !== "function") return;
+    await registration.showNotification(title, {
+      body,
+      icon: "./app-icon-192.webp",
+      badge: "./app-icon-192.webp",
+      tag: options.tag || "superlist",
+      data: { url: options.url || "./" },
+    });
+  } catch (error) {
+    console.warn("No se pudo mostrar la notificación del sistema:", error);
+  }
+}
+
+// Motivo por el que push no va a funcionar, o null si va.
+// Sirve para explicarle al usuario la situación en vez de fallar en silencio.
+function pushUnsupportedReason() {
+  if (!("serviceWorker" in navigator)) return "Este navegador no soporta service workers.";
+  if (!("PushManager" in window)) {
+    return "Las notificaciones push no funcionan dentro de la app instalada (APK). " +
+      "Necesitás abrir SuperList en el navegador, o usar la versión instalada como PWA.";
+  }
+  if (!("Notification" in window)) return "Este navegador no muestra notificaciones del sistema.";
+  return null;
+}
+
+function pushPermissionState() {
+  if (!("Notification" in window)) return "unsupported";
+  return Notification.permission;
+}
+
+async function getServiceWorkerRegistration() {
+  if (!("serviceWorker" in navigator)) return null;
+  return navigator.serviceWorker.ready;
+}

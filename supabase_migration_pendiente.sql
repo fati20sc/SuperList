@@ -14,10 +14,40 @@
 --   1) Tabla shopping_join_requests → las solicitudes de ingreso quedan en
 --      estado "pending" y el administrador tiene que aceptarlas.
 --   2) RLS de esa tabla → nadie se auto-acepta ni ve solicitudes ajenas.
---   3) Trigger protect_group_invite_code → solo el admin rota el código,
+--   3) Tabla push_subscriptions → dónde se guarda la suscripción push de cada
+--      dispositivo, para poder avisarle aunque la app esté cerrada.
+--   4) Trigger protect_group_invite_code → solo el admin rota el código,
 --      aunque se llame a la API directo (el frontend solo no alcanza).
---   4) Realtime → las solicitudes llegan sin tener que recargar.
+--   5) Realtime → las solicitudes llegan sin tener que recargar.
 -- ==============================================================================
+
+
+-- 0) Suscripciones de notificaciones push ---------------------------------------
+-- Una fila por usuario/dispositivo. El endpoint es lo que manda el navegador
+-- cuando se suscribe con la Push API.
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL,
+    p256dh TEXT NOT NULL DEFAULT '',
+    auth TEXT NOT NULL DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON public.push_subscriptions(user_id);
+
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+-- Cada uno solo ve y borra la propia suscripción. Nadie más necesita leerla:
+-- la Edge Function usa el service_role, que ignora RLS.
+DROP POLICY IF EXISTS "push_subscriptions_own" ON public.push_subscriptions;
+CREATE POLICY "push_subscriptions_own" ON public.push_subscriptions
+FOR ALL TO authenticated
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
 
 
 -- 1) Tabla de solicitudes de ingreso --------------------------------------------
@@ -119,7 +149,32 @@ END $$;
 
 
 -- ==============================================================================
--- Verificación: corré esto después. Tiene que dar 1 tabla y 4 políticas.
---   SELECT COUNT(*) AS tablas FROM pg_tables WHERE tablename = 'shopping_join_requests';
---   SELECT COUNT(*) AS politicas FROM pg_policies WHERE tablename = 'shopping_join_requests';
+-- Verificación: corré esto después. Tiene que dar 1, 1 y 4.
+--   SELECT COUNT(*) FROM pg_tables WHERE tablename = 'shopping_join_requests';
+--   SELECT COUNT(*) FROM pg_tables WHERE tablename = 'push_subscriptions';
+--   SELECT COUNT(*) FROM pg_policies WHERE tablename = 'shopping_join_requests';
+-- ==============================================================================
+-- A PARTIR DE ACÁ ESTÁ TODO LO DE LAS NOTIFICACIONES PUSH:
+--
+-- 1) Copiá la Edge Function que está en supabase/functions/send-push/index.ts
+--    a Supabase > Edge Functions > New Function, con el nombre "send-push".
+--
+-- 2) En Supabase > Edge Functions > Secrets, agregá estos dos secretos:
+--       SUPABASE_VAPID_PRIVATE_KEY = la clave privada VAPID
+--       SUPABASE_VAPID_SUBJECT     = "mailto:tu@email.com"
+--
+--    La clave pública ya está en el cliente (js/11-push.js) y también en la
+--    Edge Function. Tiene que ser el MISMO par de claves que la privada.
+--
+-- 3) Para que la app mande el push cuando algo pasa en una lista, la Edge
+--    Function tiene que invocarse. Puede ser con un trigger en la base o
+--    desde el propio cliente. Hay un ejemplo de llamada arriba del archivo
+--    supabase/functions/send-push/index.ts.
+--
+-- IMPORTANTE Y REAL: la Push API de los navegadores NO existe dentro de un
+-- WebView de Android, que es lo que usa el APK de Capacitor. O sea: en el APK
+-- el botón va a decir "no disponibles acá", porque es la verdad. Para que
+-- funcione dentro del APK hay que instalar el plugin nativo
+-- @capacitor/push-notifications y configurar FCM, que es un trabajo aparte.
+-- En el navegador y en la PWA sí funciona de verdad.
 -- ==============================================================================

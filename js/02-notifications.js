@@ -211,6 +211,11 @@ function handleIncomingNotification(payload) {
 
   addNotification(payload);
   showNotification(payload.message || payload.title, "info");
+  // Si la pestaña está oculta, además del cartelito interno se muestra uno del
+  // sistema, que es lo que se ve aunque la app esté en segundo plano.
+  showSystemNotification(payload.title || "SuperList", payload.message || "", {
+    tag: payload.dedupKey || "superlist",
+  });
 }
 
 function renderNotifications() {

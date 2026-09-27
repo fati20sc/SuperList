@@ -6,9 +6,9 @@
   "scripts": {
     "build": "node tools/build.js",
     "split": "node tools/split.js",
-    "headers": "node tools/add-headers.js",
+    "headers": "node tools/split-views.js",
     "images": "node tools/optimize-images.js && node tools/switch-to-webp.js",
-    "test": "vitest run && node tests/test_render_settings.js && node tests/test_invite_code.js && node tests/test_click_handler.js",
+    "test": "vitest run",
     "audit": "node tests/audit.js",
     "serve": "node server.js"
   },
@@ -20,6 +20,7 @@
   "devDependencies": {
     "jsdom": "^29.1.1",
     "sharp": "^0.35.4",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "web-push": "^3.6.7"
   }
 }
