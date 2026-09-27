@@ -3,6 +3,7 @@ const SESSION_KEY = "superlist-session-v2";
 const GROUPS_TABLE = "shopping_groups";
 const MEMBERS_TABLE = "shopping_group_members";
 const PRODUCTS_TABLE = "shopping_products";
+const REQUESTS_TABLE = "shopping_join_requests";
 const PROFILES_TABLE = "profiles";
 
 // ==============================================================================
@@ -563,6 +564,7 @@ const changePasswordForm = document.querySelector("#change-password-form");
 const changePasswordMessage = document.querySelector("#change-password-message");
 let pendingDeleteGroupId = null;
 let pendingRemoveMemberId = null;
+let pendingRemoveGroupId = null;
 const editGroupDialog = document.querySelector("#edit-group-dialog");
 const editGroupForm = document.querySelector("#edit-group-form");
 let pendingEditGroupId = null;
@@ -780,17 +782,20 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#confirm-close")?.addEventListener("click", () => {
     pendingDeleteGroupId = null;
     pendingRemoveMemberId = null;
+    pendingRemoveGroupId = null;
     confirmDialog.close();
   });
   document.querySelector("#confirm-cancel")?.addEventListener("click", () => {
     pendingDeleteGroupId = null;
     pendingRemoveMemberId = null;
+    pendingRemoveGroupId = null;
     confirmDialog.close();
   });
   document.querySelector("#confirm-delete")?.addEventListener("click", async () => {
     if (pendingRemoveMemberId) {
-      await removeMember(pendingRemoveMemberId);
+      await removeMember(pendingRemoveMemberId, pendingRemoveGroupId);
       pendingRemoveMemberId = null;
+      pendingRemoveGroupId = null;
     } else if (pendingDeleteGroupId) {
       deleteGroup(pendingDeleteGroupId);
     }
@@ -799,6 +804,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const deleteBtn = document.querySelector("#confirm-delete");
     if (deleteBtn) deleteBtn.textContent = "Borrar lista";
     confirmDialog.close();
+  });
+  document.querySelector("#members-dialog-close")?.addEventListener("click", () => {
+    document.querySelector("#members-dialog")?.close();
+  });
+  document.querySelector("#members-dialog-cancel")?.addEventListener("click", () => {
+    document.querySelector("#members-dialog")?.close();
   });
   document.querySelector("#edit-group-close")?.addEventListener("click", () => {
     pendingEditGroupId = null;
@@ -979,17 +990,23 @@ document.addEventListener("DOMContentLoaded", () => {
     event.preventDefault();
     const code = joinForm.elements.code.value;
     try {
-      if (await joinGroup(code)) {
-        joinMessage.textContent = "Te uniste correctamente a la lista.";
+      const result = await requestToJoinGroup(code);
+      if (result === "pending") {
+        joinMessage.textContent = "Solicitud enviada. El administrador tiene que aprobarte antes de entrar.";
         setTimeout(() => {
           joinDialog?.close();
+          currentView = "lists";
           render();
-        }, 1200);
+        }, 1800);
+      } else if (result === "already-member") {
+        joinMessage.textContent = "Ya sos miembro de esa lista.";
+      } else if (result === "duplicate") {
+        joinMessage.textContent = "Ya enviaste una solicitud y está esperando aprobación.";
       } else {
         joinMessage.textContent = "Código inválido o lista no encontrada.";
       }
     } catch (e) {
-      joinMessage.textContent = e.message || "No se pudo unir a la lista.";
+      joinMessage.textContent = e.message || "No se pudo enviar la solicitud.";
     }
   });
 
@@ -1092,7 +1109,7 @@ syncChannel?.addEventListener("message", async (event) => {
 });
 
 function loadState() {
-  return { users: [], groups: [], notifications: loadStoredNotifications(), uiNotice: "" };
+  return { users: [], groups: [], notifications: loadStoredNotifications(), joinRequests: [], uiNotice: "" };
 }
 
 function loadSession() {
@@ -1158,6 +1175,18 @@ function memberFromRow(row) {
     joinedAt: row.joined_at,
     name: row.user_name || "Usuario",
     email: row.user_email || "",
+  };
+}
+
+function requestFromRow(row) {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    userId: row.user_id,
+    name: row.user_name || "Usuario",
+    email: row.user_email || "",
+    status: row.status || "pending",
+    createdAt: row.created_at || new Date().toISOString(),
   };
 }
 
@@ -1432,11 +1461,16 @@ async function loadAppData() {
       return;
     }
 
-    const [groups, members, products, profiles] = await Promise.all([
+    const [groups, members, products, profiles, joinRequests] = await Promise.all([
       runSupabase(supabaseClient.from(GROUPS_TABLE).select("*").in("id", groupIds), "No se pudieron cargar tus listas."),
       runSupabase(supabaseClient.from(MEMBERS_TABLE).select("*").in("group_id", groupIds), "No se pudieron cargar los miembros."),
       runSupabase(supabaseClient.from(PRODUCTS_TABLE).select("*").in("group_id", groupIds), "No se pudieron cargar los productos."),
       supabaseClient.from(PROFILES_TABLE).select("id, name, email").then(({ data }) => data || []).catch(() => []),
+      // Solicitudes de ingreso: las pendientes directedas a las listas donde soy
+      // admin, mas las mias, para poder mostrar "esperando aprobacion".
+      supabaseClient.from(REQUESTS_TABLE).select("*")
+        .or(`user_id.eq.${user.id},group_id.in.(${groupIds.join(",")})`)
+        .then(({ data }) => data || []).catch(() => []),
     ]);
 
     const profilesById = new Map();
@@ -1487,6 +1521,7 @@ async function loadAppData() {
         (productsByGroup.get(group.id) || []).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
       )),
       notifications: currentNotifs,
+      joinRequests: (joinRequests || []).map(requestFromRow),
       uiNotice: state.uiNotice || "",
     };
 
@@ -1846,7 +1881,10 @@ async function createGroup(name, emoji = "🏠", options = {}) {
   return group;
 }
 
-async function joinGroup(code) {
+// Envia la solicitud de ingreso. Antes el usuario se sumaba directo; ahora
+// queda en estado "pending" y el admin tiene que aceptarlo.
+// Devuelve: "pending" | "already-member" | "invalid" | "duplicate".
+async function requestToJoinGroup(code) {
   const user = currentUser();
   const normalized = clean(code).toUpperCase();
   const groupRow = await runSupabase(
@@ -1854,33 +1892,125 @@ async function joinGroup(code) {
     "No se pudo buscar el código."
   );
   const group = groupRow ? groupFromRow(groupRow) : null;
-  if (!user || !group) return false;
+  if (!user || !group) return "invalid";
+
+  // Ya es miembro: no se pide nada.
+  const isMember = (state.groups.find((item) => item.id === group.id)?.members || [])
+    .some((member) => member.userId === user.id);
+  if (isMember) return "already-member";
+
+  // Ya habia enviado una solicitud pendiente.
+  const existing = (state.joinRequests || []).find(
+    (item) => item.groupId === group.id && item.userId === user.id
+  );
+  if (existing && existing.status === "pending") return "duplicate";
+
+  if (existing) {
+    // Reenvia una solicitud que habia sido rechazada.
+    await runSupabase(
+      supabaseClient.from(REQUESTS_TABLE)
+        .update({ status: "pending", created_at: new Date().toISOString() })
+        .eq("id", existing.id),
+      "No se pudo reenviar la solicitud."
+    );
+    existing.status = "pending";
+  } else {
+    const row = {
+      group_id: group.id,
+      user_id: user.id,
+      user_name: getUserDisplayName(user),
+      user_email: user.email || "",
+      status: "pending",
+      created_at: new Date().toISOString(),
+    };
+    const created = await runSupabase(
+      supabaseClient.from(REQUESTS_TABLE).insert(row).select().single(),
+      "No se pudo enviar la solicitud."
+    );
+    if (created) state.joinRequests = [...(state.joinRequests || []), requestFromRow(created)];
+  }
+
+  persist();
+  // Avisar a los admins de que hay una solicitud pendiente.
+  await broadcastGroupNotification({
+    id: `notif-req-${group.id}-${user.id}`,
+    dedupKey: `req-${group.id}-${user.id}`,
+    groupId: group.id,
+    title: "Solicitud de ingreso",
+    message: `${getUserDisplayName(user)} pidió entrar a la lista`,
+    actorId: null,
+    timestamp: new Date().toISOString(),
+  });
+  return "pending";
+}
+
+// Solicitudes pendientes de una lista (solo si soy admin).
+function pendingRequestsFor(group) {
+  if (!group || memberRole(group) !== "admin") return [];
+  return (state.joinRequests || []).filter(
+    (item) => item.groupId === group.id && item.status === "pending"
+  );
+}
+
+// El admin acepta una solicitud: agrega el miembro y cierra la solicitud.
+async function approveJoinRequest(requestId) {
+  const request = (state.joinRequests || []).find((item) => item.id === requestId);
+  if (!request) return;
+  const group = state.groups.find((item) => item.id === request.groupId);
+  if (!group) return;
+  if (memberRole(group) !== "admin") {
+    showNotification("Solo el administrador puede aceptar solicitudes.", "error");
+    return;
+  }
 
   const member = {
-    userId: user.id,
+    userId: request.userId,
     role: "member",
     joinedAt: new Date().toISOString(),
-    name: getUserDisplayName(user),
-    email: user.email,
+    name: request.name,
+    email: request.email,
   };
-
   await runSupabase(
     supabaseClient.from(MEMBERS_TABLE).upsert(memberToRow(group.id, member), { onConflict: "group_id,user_id" }),
-    "No se pudo unir a la lista."
+    "No se pudo agregar al miembro."
+  );
+  await runSupabase(
+    supabaseClient.from(REQUESTS_TABLE).update({ status: "accepted" }).eq("id", requestId),
+    "No se pudo cerrar la solicitud."
   );
 
-  session.groupId = group.id;
-  currentView = "home";
+  if (!group.members.some((item) => item.userId === request.userId)) {
+    group.members.push(member);
+  }
+  request.status = "accepted";
   persist();
-  await loadAppData();
-  // Avisar al resto de la lista de que este usuario se sumo. A los que ya
-  // estaban les llega por Realtime; a los que no, al recargar.
+  showNotification(`${request.name} ahora es parte de la lista.`, "success");
   await notifyMembersAboutMembership(
     group.id,
-    `${getUserDisplayName(user)} se unió a la lista`,
-    `join-${group.id}-${user.id}`
+    `${request.name} fue aceptado en la lista`,
+    `accept-${group.id}-${request.userId}`
   );
-  return true;
+  renderLists();
+  openMembersDialog(group);
+}
+
+async function rejectJoinRequest(requestId) {
+  const request = (state.joinRequests || []).find((item) => item.id === requestId);
+  if (!request) return;
+  const group = state.groups.find((item) => item.id === request.groupId);
+  if (!group || memberRole(group) !== "admin") {
+    showNotification("Solo el administrador puede rechazar solicitudes.", "error");
+    return;
+  }
+  await runSupabase(
+    supabaseClient.from(REQUESTS_TABLE).update({ status: "rejected" }).eq("id", requestId),
+    "No se pudo rechazar la solicitud."
+  );
+  request.status = "rejected";
+  persist();
+  showNotification(`Rechazaste la solicitud de ${request.name}.`, "info");
+  renderLists();
+  openMembersDialog(group);
 }
 
 // Avisa al resto de la lista sobre un movimiento de miembros. Reutiliza el
@@ -2988,11 +3118,16 @@ function renderLists() {
                   ` : ""}
                 </div>
                 ` : ""}
+                ${pendingRequestsFor(group).length ? `
+                <p class="pending-requests-badge">${pendingRequestsFor(group).length} solicitud${pendingRequestsFor(group).length === 1 ? "" : "es"} pendiente${pendingRequestsFor(group).length === 1 ? "" : "s"}</p>
+                ` : ""}
               </div>
               <div class="product-actions compact-actions">
                 <button class="secondary-button" type="button" data-action="select-list" data-id="${group.id}">Abrir</button>
                 <button class="secondary-button" type="button" data-action="edit-group" data-id="${group.id}"
                         aria-label="Editar ${escapeHtml(group.name)}">Editar</button>
+                <button class="secondary-button" type="button" data-action="open-members" data-id="${group.id}"
+                        aria-label="Ver miembros de ${escapeHtml(group.name)}">Miembros</button>
                 ${memberRole(group) === "admin" ? `<button class="danger-button danger-inline" type="button" data-action="delete-list" data-id="${group.id}">Borrar</button>` : ""}
               </div>
             </article>
@@ -3039,61 +3174,10 @@ function renderLists() {
 }
 
 function renderSettings() {
-  const group = getCurrentGroup();
   const user = currentUser();
-  const role = memberRole(group);
-  const myGroups = userGroups();
-  // Los codigos de invitacion viven en "Mis listas" (renderLists), no aca.
-  // Mi cuenta queda para el perfil y los miembros de la lista abierta.
-
-  const groupSection = group ? `
-      <section class="panel">
-        <div class="panel-head vertical">
-          <div>
-            <p class="eyebrow">Lista actual</p>
-            <h2>${escapeHtml(group.name)}</h2>
-          </div>
-          <span class="chip">${role}</span>
-        </div>
-        ${group.type === "shared" && group.inviteCode ? `
-        <div class="invite-box">
-          <span>Código de invitación</span>
-          <strong class="invite-code-value">${escapeHtml(group.inviteCode)}</strong>
-          <p class="invite-box-hint">Para copiarlo o cambiarlo, andá a "Mis listas".</p>
-        </div>
-        ` : `
-        <div class="invite-box">
-          <span>Tipo de lista</span>
-          <strong>Lista individual</strong>
-        </div>
-        `}
-        <h3>Miembros</h3>
-        <div class="product-list">
-          ${group.members.map((member) => memberRow(member, group)).join("")}
-        </div>
-      </section>
-  ` : (myGroups.length ? `
-      <section class="panel">
-        <div class="panel-head vertical">
-          <div>
-            <p class="eyebrow">Grupo actual</p>
-            <h2>Elegí una lista</h2>
-          </div>
-        </div>
-        <p style="color: var(--text-muted);">No hay ninguna lista abierta. Abrí una desde "Mis listas" para ver sus miembros.</p>
-      </section>
-  ` : `
-      <section class="panel">
-        <div class="panel-head vertical">
-          <div>
-            <p class="eyebrow">Grupo actual</p>
-            <h2>No tenés una lista creada</h2>
-          </div>
-        </div>
-        <p style="color: var(--text-muted);">Seleccioná o creá una lista desde "Mis listas" para ver los detalles.</p>
-      </section>
-  `);
-
+  // Mi cuenta es solo el perfil. Las listas, sus codigos y sus miembros se
+  // administran desde "Mis listas" (renderLists), que es el unico lugar donde
+  // tiene sentido ver todo eso junto.
   app.innerHTML = `
     <section class="settings-layout">
       <section class="panel account-panel">
@@ -3114,7 +3198,6 @@ function renderSettings() {
           </div>
         </div>
       </section>
-      ${groupSection}
     </section>
   `;
   bindCommonActions();
@@ -3321,8 +3404,63 @@ async function regenerateInviteCode(groupId = null) {
 
   group.inviteCode = next;
   persist();
-  renderSettings();
+  renderLists();
   showNotification(`Código nuevo: ${next}. El anterior ya no funciona.`, "success");
+}
+
+// Dialogo de miembros de una lista, abierto desde "Mis listas". Incluye las
+// solicitudes pendientes cuando el usuario es admin, que es quien las aprueba.
+function openMembersDialog(group) {
+  const dialog = document.querySelector("#members-dialog");
+  const title = document.querySelector("#members-dialog-title");
+  const eyebrow = document.querySelector("#members-dialog-eyebrow");
+  const body = document.querySelector("#members-dialog-body");
+  if (!dialog || !body || !group) return;
+
+  if (title) title.textContent = group.members.length === 1 ? "1 miembro" : `${group.members.length} miembros`;
+  if (eyebrow) eyebrow.textContent = `${group.emoji || "🏠"} ${group.name}`;
+
+  const pending = pendingRequestsFor(group);
+  const isAdmin = memberRole(group) === "admin";
+
+  body.innerHTML = `
+    ${pending.length ? `
+      <div class="requests-block">
+        <h3>Solicitudes pendientes (${pending.length})</h3>
+        <p class="invite-box-hint">Quien entra con el código necesita tu aprobación.</p>
+        <div class="product-list">
+          ${pending.map((request) => `
+            <article class="product-card request-card">
+              <div class="product-main">
+                <div class="product-name">${escapeHtml(request.name)}</div>
+                <div class="product-meta">
+                  <span>${escapeHtml(request.email || "sin email")}</span>
+                </div>
+              </div>
+              <div class="product-actions compact-actions">
+                <button class="code-button code-button-copy" type="button" data-action="approve-request"
+                        data-request-id="${escapeHtml(request.id)}"
+                        aria-label="Aceptar a ${escapeHtml(request.name)}">Aceptar</button>
+                <button class="danger-button danger-inline" type="button" data-action="reject-request"
+                        data-request-id="${escapeHtml(request.id)}"
+                        aria-label="Rechazar a ${escapeHtml(request.name)}">Rechazar</button>
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      </div>
+    ` : ""}
+    <div class="requests-block">
+      <h3>Miembros</h3>
+      <div class="product-list">
+        ${group.members.map((member) => memberRow(member, group)).join("")}
+      </div>
+      ${!isAdmin ? `<p class="invite-box-hint">Solo el administrador puede quitar miembros.</p>` : ""}
+    </div>
+  `;
+
+  bindCommonActions();
+  if (!dialog.open) dialog.showModal();
 }
 
 function memberRow(member, group) {
@@ -3337,7 +3475,7 @@ function memberRow(member, group) {
         <div class="product-meta"><span>${escapeHtml(member.role)}</span>${displayEmail && displayEmail !== displayName ? `<span>${escapeHtml(displayEmail)}</span>` : ""}</div>
       </div>
       ${canRemove ? `
-        <button class="danger-button danger-inline remove-member-button" type="button" data-action="remove-member" data-id="${member.userId}"
+        <button class="danger-button danger-inline remove-member-button" type="button" data-action="remove-member" data-id="${member.userId}" data-group-id="${escapeHtml(group.id)}"
                 aria-label="Quitar a ${escapeHtml(displayName)} de la lista"
                 title="Quitar de la lista">Quitar</button>
       ` : ""}
@@ -3603,7 +3741,9 @@ function bindCommonActions() {
         return;
       }
       if (action === "remove-member") {
-        const group = getCurrentGroup();
+        const group = element.dataset.groupId
+          ? state.groups.find((item) => item.id === element.dataset.groupId)
+          : getCurrentGroup();
         if (!group) return;
         if (memberRole(group) !== "admin") {
           showNotification("Solo el administrador puede quitar miembros.", "error");
@@ -3613,13 +3753,31 @@ function bindCommonActions() {
         const member = group.members.find((item) => item.userId === id);
         const memberName = member?.name || member?.email || "este miembro";
         pendingRemoveMemberId = id;
+        pendingRemoveGroupId = group.id;
         const messageEl = document.querySelector("#confirm-dialog-message");
         const titleEl = document.querySelector("#confirm-dialog-title");
         const deleteBtn = document.querySelector("#confirm-delete");
         if (titleEl) titleEl.textContent = "Quitar miembro";
-        if (messageEl) messageEl.textContent = `¿Quitar a ${memberName} de la lista? Va a poder unirse otra vez con el código.`;
+        if (messageEl) messageEl.textContent = `¿Quitar a ${memberName} de "${group.name}"? Va a poder volver a pedir ingreso con el código.`;
         if (deleteBtn) deleteBtn.textContent = "Quitar";
         confirmDialog?.showModal();
+        event.stopPropagation();
+        return;
+      }
+      if (action === "open-members") {
+        const group = state.groups.find((item) => item.id === id);
+        if (!group) return;
+        openMembersDialog(group);
+        event.stopPropagation();
+        return;
+      }
+      if (action === "approve-request") {
+        await approveJoinRequest(element.dataset.requestId);
+        event.stopPropagation();
+        return;
+      }
+      if (action === "reject-request") {
+        await rejectJoinRequest(element.dataset.requestId);
         event.stopPropagation();
         return;
       }
@@ -3685,6 +3843,7 @@ async function deleteGroup(groupId) {
   if (!group || !group.members.some((member) => member.userId === user.id && member.role === "admin")) return;
 
   await runSupabase(supabaseClient.from(PRODUCTS_TABLE).delete().eq("group_id", groupId), "No se pudieron borrar los productos.");
+  await runSupabase(supabaseClient.from(REQUESTS_TABLE).delete().eq("group_id", groupId), "No se pudieron borrar las solicitudes.");
   await runSupabase(supabaseClient.from(MEMBERS_TABLE).delete().eq("group_id", groupId), "No se pudieron borrar los miembros.");
   await runSupabase(supabaseClient.from(GROUPS_TABLE).delete().eq("id", groupId), "No se pudo borrar la lista.");
   state.groups = state.groups.filter((item) => item.id !== groupId);
@@ -3703,8 +3862,12 @@ async function deleteGroup(groupId) {
   render();
 }
 
-async function removeMember(userId) {
-  const group = getCurrentGroup();
+// Quita a un miembro. Acepta el id de la lista para funcionar desde el dialogo
+// de "Mis listas", donde la lista abierta puede ser otra.
+async function removeMember(userId, groupId = null) {
+  const group = groupId
+    ? state.groups.find((item) => item.id === groupId)
+    : getCurrentGroup();
   if (!group) return;
   if (memberRole(group) !== "admin") {
     showNotification("Solo el administrador puede quitar miembros.", "error");
@@ -3730,7 +3893,10 @@ async function removeMember(userId) {
     `remove-${group.id}-${userId}`
   );
   showNotification(`Quitaste a ${memberName} de la lista.`, "success");
-  renderSettings();
+  renderLists();
+  // Si el dialogo de miembros esta abierto, se refresca con la lista nueva.
+  const membersDialog = document.querySelector("#members-dialog");
+  if (membersDialog?.open) openMembersDialog(group);
 }
 
 function firstEmptyState() {

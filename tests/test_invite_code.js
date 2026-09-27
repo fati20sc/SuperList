@@ -47,10 +47,13 @@ const sandbox = {
   memberRole: () => sandbox.role,
   currentUser: () => ({ id: "u1", name: "Ana", email: "a@b.c" }),
   persist() {},
-  renderSettings() { sandbox.rendered = true; },
+  // regenerateInviteCode refresca "Mis listas", no "Mi cuenta".
+  renderLists() { sandbox.rendered = true; },
   GROUPS_TABLE: "shopping_groups",
   supabaseClient: { from: (t) => ({ update: (v) => { sandbox.updatePayload = v; return { eq: () => "PROMISE" }; } }) },
   group: null,
+  // regenerateInviteCode puede buscar por id en state.groups.
+  state: { groups: [] },
   role: "admin",
 };
 
@@ -113,6 +116,17 @@ const api = fn(...Object.values(sandbox));
   sandbox.updatePayload = null;
   await api.regenerateInviteCode();
   check("no hace nada", sandbox.updatePayload === null && notifications.length === 0);
+
+  console.log("7) regenerateInviteCode por groupId (desde Mis listas)");
+  notifications.length = 0;
+  sandbox.state = { groups: [{ id: "gX", type: "shared", inviteCode: "OTRO-1" }] };
+  sandbox.getCurrentGroup = () => null;
+  sandbox.role = "admin";
+  sandbox.updatePayload = null;
+  const api3 = fn(...Object.values(sandbox));
+  await api3.regenerateInviteCode("gX");
+  check("roto la lista indicada por id", sandbox.updatePayload?.invite_code === "AAAA-BBBB");
+  check("actualizo esa lista", sandbox.state.groups[0].inviteCode === "AAAA-BBBB");
 
   console.log(`\nResultado: ${pass} OK, ${fail} fallas`);
   process.exit(fail ? 1 : 0);

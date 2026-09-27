@@ -1334,6 +1334,33 @@ h3 {
   min-width: 72px;
 }
 
+.pending-requests-badge {
+  display: inline-block;
+  margin: 8px 0 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.requests-block {
+  display: grid;
+  gap: 10px;
+}
+
+.requests-block h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.request-card {
+  border-style: dashed;
+  border-color: var(--accent);
+}
+
 .search-input,
 .field input,
 .field textarea,

@@ -92,6 +92,24 @@ CREATE TABLE IF NOT EXISTS public.shopping_group_members (
     UNIQUE (group_id, user_id)
 );
 
+-- 4b. Tabla de Solicitudes de Ingreso
+-- Un usuario que pone el codigo NO entra directo: queda como "pending" y el
+-- admin de la lista tiene que aceptarlo. Esto cierra el hueco de que cualquiera
+-- con el codigo se sumara sin control.
+CREATE TABLE IF NOT EXISTS public.shopping_join_requests (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    group_id TEXT NOT NULL REFERENCES public.shopping_groups(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_name TEXT DEFAULT 'Usuario',
+    user_email TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_requests_group_id ON public.shopping_join_requests(group_id);
+CREATE INDEX IF NOT EXISTS idx_requests_user_id ON public.shopping_join_requests(user_id);
+
 -- 5. Tabla de Productos
 CREATE TABLE IF NOT EXISTS public.shopping_products (
     id TEXT PRIMARY KEY,
@@ -153,6 +171,7 @@ $$;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shopping_groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shopping_group_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.shopping_join_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shopping_products ENABLE ROW LEVEL SECURITY;
 
 -- 9. Políticas para profiles
@@ -258,6 +277,46 @@ USING (
   OR is_group_admin(group_id, auth.uid())
 );
 
+-- 11b. Políticas para shopping_join_requests (solicitudes de ingreso)
+-- Solo se ve la propia solicitud o las de las listas donde se es admin.
+DROP POLICY IF EXISTS "shopping_requests_select" ON public.shopping_join_requests;
+CREATE POLICY "shopping_requests_select" ON public.shopping_join_requests
+FOR SELECT TO authenticated
+USING (
+  user_id = auth.uid()
+  OR is_group_admin(group_id, auth.uid())
+);
+
+-- Cualquiera autenticado puede pedir entrar, pero solo a si mismo y con
+-- estado "pending": no puede auto-aprobarse ni crear solicitudes ajenas.
+DROP POLICY IF EXISTS "shopping_requests_insert" ON public.shopping_join_requests;
+CREATE POLICY "shopping_requests_insert" ON public.shopping_join_requests
+FOR INSERT TO authenticated
+WITH CHECK (
+  user_id = auth.uid()
+  AND status = 'pending'
+  AND EXISTS (
+    SELECT 1 FROM public.shopping_groups
+    WHERE id = group_id AND type = 'shared' AND invite_code IS NOT NULL
+  )
+);
+
+-- Solo el admin de la lista puede resolver (aceptar/rechazar) la solicitud.
+DROP POLICY IF EXISTS "shopping_requests_update" ON public.shopping_join_requests;
+CREATE POLICY "shopping_requests_update" ON public.shopping_join_requests
+FOR UPDATE TO authenticated
+USING (is_group_admin(group_id, auth.uid()))
+WITH CHECK (is_group_admin(group_id, auth.uid()));
+
+-- El solicitante puede cancelar su propia solicitud; el admin puede limpiarla.
+DROP POLICY IF EXISTS "shopping_requests_delete" ON public.shopping_join_requests;
+CREATE POLICY "shopping_requests_delete" ON public.shopping_join_requests
+FOR DELETE TO authenticated
+USING (
+  user_id = auth.uid()
+  OR is_group_admin(group_id, auth.uid())
+);
+
 -- 12. Políticas para shopping_products
 DROP POLICY IF EXISTS "shopping_products_select" ON public.shopping_products;
 CREATE POLICY "shopping_products_select" ON public.shopping_products
@@ -302,6 +361,13 @@ BEGIN
     WHERE pubname = 'supabase_realtime' AND tablename = 'shopping_group_members'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.shopping_group_members;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'shopping_join_requests'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.shopping_join_requests;
   END IF;
 
   IF NOT EXISTS (

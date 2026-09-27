@@ -1,9 +1,9 @@
-const CACHE_NAME = "superlist-v9";
+const CACHE_NAME = "superlist-v10";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=10",
-  "./app.js?v=10",
+  "./styles.css?v=11",
+  "./app.js?v=11",
   "./app-icon.png",
   "./app-icon-192.png",
   "./logo.png",
