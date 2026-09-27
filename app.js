@@ -14,25 +14,29 @@ const PROFILES_TABLE = "profiles";
 const THEME_MODE_KEY = "superlist_theme_mode";      // "light" | "dark" | "auto"
 const THEME_PALETTE_KEY = "superlist_theme_palette"; // id de THEME_PALETTES
 
+// Modos de tema. El icono se dibuja con SVG en linea (themeModeIcon) para no
+// depender de la fuente de emoji del sistema.
 const THEME_MODES = [
-  { id: "light", label: "Claro", icon: "☀️" },
-  { id: "dark", label: "Oscuro", icon: "🌙" },
-  { id: "auto", label: "Automático", icon: "📱" },
+  { id: "light", label: "Claro" },
+  { id: "dark", label: "Oscuro" },
+  { id: "auto", label: "Automático" },
 ];
 
-// Siete paletas, cada una con su version clara y su version nocturna.
+// Paletas, cada una con su version clara y su version nocturna.
 // "verde" es la original de SuperList y la que se aplica por defecto (automatica);
 // las demas solo entran si el usuario las elige explicitamente.
-// Los emoji se limitan a codepoints con cobertura amplia: \u{1FA76} se ve como
-// cuadro vacio en equipos sin esa fuente.
+// El color se muestra con un cuadradito (.theme-swatch), no hace falta emoji.
+// Cada paleta ademas define --text-*: su color de texto con 18% de tinte del
+// acento mezclado con el gris base, validado con WCAG AA en ambos modos.
 const THEME_PALETTES = [
-  { id: "verde",    label: "Verde",    emoji: "\u{1F33F}", light: "#517d49", dark: "#5b8e52" },
-  { id: "lila",     label: "Lila",     emoji: "\u{1F49C}", light: "#8365a5", dark: "#8f77ab" },
-  { id: "rojo",     label: "Rojo",     emoji: "\u2764\uFE0F", light: "#b0594c", dark: "#b76e63" },
-  { id: "azul",     label: "Azul",     emoji: "\u{1F499}", light: "#4b7892", dark: "#5887a2" },
-  { id: "turquesa", label: "Turquesa", emoji: "\u{1F4A7}", light: "#3b7d76", dark: "#478d86" },
-  { id: "naranja",  label: "Naranja",  emoji: "\u{1F9E1}", light: "#9f6538", dark: "#b07344" },
-  { id: "amarillo", label: "Amarillo", emoji: "\u{1F49B}", light: "#886f30", dark: "#997e3b" },
+  { id: "verde",    label: "Verde",    light: "#517d49", dark: "#5b8e52" },
+  { id: "lila",     label: "Lila",     light: "#8365a5", dark: "#8f77ab" },
+  { id: "rojo",     label: "Rojo",     light: "#b0594c", dark: "#b76e63" },
+  { id: "rosa",     label: "Rosa",     light: "#a8496b", dark: "#c86d8f" },
+  { id: "azul",     label: "Azul",     light: "#4b7892", dark: "#5887a2" },
+  { id: "turquesa", label: "Turquesa", light: "#3b7d76", dark: "#478d86" },
+  { id: "naranja",  label: "Naranja",  light: "#9f6538", dark: "#b07344" },
+  { id: "amarillo", label: "Amarillo", light: "#886f30", dark: "#997e3b" },
 ];
 
 const DEFAULT_PALETTE = "verde";
@@ -138,6 +142,50 @@ function watchSystemTheme() {
   }
 }
 
+// ------------------------------------------------------------------------------
+// Iconos de los modos de tema, en SVG en linea. Se usan en vez de emoji para no
+// depender de la fuente del sistema: el sol y la luna se ven siempre iguales.
+// ------------------------------------------------------------------------------
+function themeModeIcon(id) {
+  const svg = (paths) => `
+    <svg class="theme-mode-icon" viewBox="0 0 24 24" width="18" height="18"
+         fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      ${paths}
+    </svg>`;
+
+  if (id === "dark") {
+    return svg('<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />');
+  }
+  if (id === "auto") {
+    return svg('<rect x="6" y="2" width="12" height="20" rx="2.5" />' + '<path d="M10.5 18.5h3" />');
+  }
+  return svg(
+    '<circle cx="12" cy="12" r="4.2" />' +
+      '<path d="M12 2.4v2.2M12 19.4v2.2M4.2 12H2M22 12h-2.2M5.8 5.8 4.2 4.2M19.8 19.8l-1.6-1.6M18.2 5.8l1.6-1.6M4.2 19.8l1.6-1.6" />'
+  );
+}
+
+// Tarjeta de acceso a la personalizacion, usada en Inicio. Muestra el estado
+// actual (cuadradito de la paleta + modo) y abre el dialogo al tocarla.
+function themeEntryMarkup() {
+  const palette = getPaletteById(getActivePalette());
+  const dark = getActiveThemeMode() === "dark";
+  const modeText = readStoredThemeMode() === "auto" ? "Automático" : dark ? "Oscuro" : "Claro";
+  return `
+    <button class="theme-entry" type="button" data-open-theme
+            aria-label="Personalizar el tema. Actual: ${escapeHtml(palette.label)}, ${escapeHtml(modeText.toLowerCase())}">
+      <span class="theme-swatch theme-entry-swatch"
+            style="--swatch-light:${palette.light}; --swatch-dark:${palette.dark}; background:${palette.light};"
+            aria-hidden="true"></span>
+      <span class="theme-entry-text">
+        <strong>Personalizar la app</strong>
+        <span>${escapeHtml(palette.label)} · ${escapeHtml(modeText)}</span>
+      </span>
+      <span class="theme-entry-chevron" aria-hidden="true">›</span>
+    </button>`;
+}
+
 // Arranque: aplica la preferencia guardada (o la del dispositivo) sin parpadeo.
 function initTheme() {
   applyTheme();
@@ -145,11 +193,13 @@ function initTheme() {
   watchSystemTheme();
   updateThemeButton();
 
-  // El boton flotante vive fuera de las vistas, asi que se engancha una sola vez.
-  const fab = document.querySelector("#theme-fab");
-  if (fab && !fab.dataset.bound) {
-    fab.dataset.bound = "1";
-    fab.addEventListener("click", openThemeDialog);
+  // No hay boton flotante: el acceso al tema vive en Inicio y en Mi cuenta, y
+  // ambas vistas se re-renderizan. Se engancha una sola vez por delegacion.
+  if (!document.documentElement.dataset.themeBound) {
+    document.documentElement.dataset.themeBound = "1";
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-open-theme]")) openThemeDialog();
+    });
   }
 }
 
@@ -497,7 +547,6 @@ const markBoughtForm = document.querySelector("#mark-bought-form");
 const joinDialog = document.querySelector("#join-dialog");
 const joinForm = document.querySelector("#join-form");
 const joinMessage = document.querySelector("#join-message");
-const categoryList = document.querySelector("#category-list");
 const optionalToggle = document.querySelector("#optional-toggle");
 const optionalFields = document.querySelector("#optional-fields");
 const groupSwitcher = document.querySelector("#group-switcher");
@@ -595,6 +644,14 @@ editGroupForm?.addEventListener("submit", async (event) => {
 
   const group = state.groups.find((g) => g.id === id);
   if (!group) return;
+  // Misma regla que en el handler del click y que la politica de la base:
+  // solo miembros de la lista pueden editarla.
+  const member = currentUser();
+  if (!member || !group.members.some((m) => m.userId === member.id)) {
+    showNotification("No tenés permiso para editar esta lista.", "error");
+    editGroupDialog.close();
+    return;
+  }
   group.name = name || group.name;
   group.emoji = emoji;
   await runSupabase(
@@ -603,8 +660,10 @@ editGroupForm?.addEventListener("submit", async (event) => {
   );
   persist();
   pendingEditGroupId = null;
+  document.querySelector("#emoji-picker")?.remove();
   editGroupDialog.close();
-  renderLists();
+  // Re-renderiza la vista activa para que el nuevo emoji se vea al toque.
+  render();
 });
 
 document.addEventListener("keydown", (event) => {
@@ -622,6 +681,25 @@ optionalToggle?.addEventListener("click", () => {
   } else {
     optionalFields.hidden = false;
   }
+});
+
+// Chips de categoria: rellenan el input. Se delegan porque los chips se
+// re-renderizan cada vez que se abre el dialogo.
+document.querySelector("#category-chips")?.addEventListener("click", (event) => {
+  const chip = event.target.closest("[data-category]");
+  if (!chip) return;
+  const input = form?.elements.category;
+  if (!input) return;
+  input.value = chip.dataset.category;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+});
+
+// Si la categoria se escribe a mano, el chip que coincida se marca igual.
+form?.elements.category?.addEventListener("input", syncCategoryChips);
+
+// Selector de emojis del dialogo de editar lista.
+editGroupForm?.querySelector("[data-emoji-picker-toggle]")?.addEventListener("click", () => {
+  openEmojiPicker(editGroupForm.elements.emoji);
 });
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1564,11 +1642,6 @@ function getProduct(id) {
   return groupProducts().find((product) => product.id === id) || null;
 }
 
-function guardedAdd() {
-  if (!currentUser() || !getCurrentGroup()) return;
-  openProductDialog();
-}
-
 function clean(value) {
   return String(value || "").trim();
 }
@@ -1610,6 +1683,56 @@ function bindEmojiOnlyInput(element) {
       element.value = next;
     }
   });
+}
+
+// Emojis sugeridos para el selector. Formato igual al que ya usa la app:
+// texto plano de 1-2 caracteres.
+const GROUP_EMOJI_CHOICES = [
+  "🏠", "🛒", "🛍️", "🥑", "🍎", "🍌", "🍞", "🥛", "☕", "🍕",
+  "🍗", "🐟", "🥕", "🥦", "🍅", "🥚", "🧀", "🍫", "🍺", "🧃",
+  "🧹", "🧺", "🧼", "🐶", "🐱", "👶", "🎒", "⛺", "🍽️", "💊",
+];
+
+// Abre el selector junto al campo de emoji del dialogo de edicion.
+// No cambia como se guarda: solo escribe en el input, que sigue siendo la
+// fuente de verdad y se normaliza con normalizeGroupEmoji() al guardar.
+function openEmojiPicker(input) {
+  if (!input) return;
+  document.querySelector("#emoji-picker")?.remove();
+
+  const picker = document.createElement("div");
+  picker.id = "emoji-picker";
+  picker.className = "emoji-picker";
+  picker.setAttribute("role", "group");
+  picker.setAttribute("aria-label", "Elegir emoji");
+  picker.innerHTML = `
+    <div class="emoji-picker-grid">
+      ${GROUP_EMOJI_CHOICES.map(
+        (emoji) => `<button class="emoji-picker-item" type="button" data-emoji="${emoji}"
+             aria-label="Elegir ${emoji}">${emoji}</button>`
+      ).join("")}
+    </div>
+    <button class="emoji-picker-close" type="button">Cerrar</button>`;
+
+  const field = input.closest(".emoji-field") || input.parentElement;
+  (field || document.body).appendChild(picker);
+
+  const close = () => picker.remove();
+  picker.querySelector(".emoji-picker-close")?.addEventListener("click", close);
+
+  picker.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-emoji]");
+    if (!item) return;
+    input.value = normalizeGroupEmoji(item.dataset.emoji);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    close();
+  });
+
+  setTimeout(() => {
+    document.addEventListener("click", (event) => {
+      if (!picker.contains(event.target) && event.target !== input) close();
+    });
+  }, 0);
 }
 
 function createInviteCode() {
@@ -1951,7 +2074,28 @@ function openProductDialog(product = null) {
 }
 
 function fillCategories(group) {
-  categoryList.innerHTML = group.categories.map((category) => `<option value="${escapeHtml(category)}"></option>`).join("");
+  const chips = document.querySelector("#category-chips");
+  if (!chips) return;
+  chips.innerHTML = group.categories
+    .map(
+      (category) => `<button class="category-chip" type="button" data-category="${escapeHtml(category)}"
+           aria-label="Usar la categoría ${escapeHtml(category)}">${escapeHtml(category)}</button>`
+    )
+    .join("");
+  syncCategoryChips();
+}
+
+// Marca como elegido el chip que coincide con lo escrito en el input.
+function syncCategoryChips() {
+  const chips = document.querySelector("#category-chips");
+  const input = form?.elements.category;
+  if (!chips || !input) return;
+  const current = clean(input.value).toLowerCase();
+  chips.querySelectorAll("[data-category]").forEach((chip) => {
+    const match = clean(chip.dataset.category).toLowerCase() === current;
+    chip.classList.toggle("is-selected", match);
+    chip.setAttribute("aria-pressed", String(match));
+  });
 }
 
 function renderPasswordReset() {
@@ -2505,6 +2649,13 @@ function renderHome() {
         <button class="secondary-button" type="button" data-action="join-with-code">Unirse con código</button>
       </div>
     </section>
+
+    <section class="panel">
+      <div class="panel-head vertical">
+        <h2>Ajustes de la app</h2>
+      </div>
+      ${themeEntryMarkup()}
+    </section>
     <!-- Próxima compra eliminada según preferencia del usuario -->
   `;
 
@@ -2610,7 +2761,10 @@ function renderListDetail() {
   app.innerHTML = `
     <section class="panel">
       <div class="panel-head vertical list-detail-header">
-        <span class="list-detail-emoji">${escapeHtml(currentGroup.emoji || "🏠")}</span>
+        <button class="list-detail-emoji list-detail-emoji-button" type="button"
+                data-action="edit-group-emoji" data-id="${currentGroup.id}"
+                aria-label="Cambiar emoji de ${escapeHtml(currentGroup.name)}"
+                title="Cambiar emoji">${escapeHtml(currentGroup.emoji || "🏠")}</button>
         <h2>${escapeHtml(currentGroup.name)}</h2>
       </div>
     </section>
@@ -2625,6 +2779,7 @@ function renderListDetail() {
     <section class="panel">
       <div class="panel-head vertical">
         <h2>Artículos</h2>
+        <button class="primary-button" type="button" data-action="add">+ Agregar producto</button>
       </div>
       ${products.length ? productList(products, { quantity: true }) : empty("Todavía no tenés artículos en esta lista.")}
     </section>
@@ -2879,6 +3034,7 @@ function renderSettings() {
           <div class="account-actions">
             <button class="secondary-button" type="button" data-action="edit-profile">Editar perfil</button>
             <button class="secondary-button" type="button" data-action="change-password">Cambiar contraseña</button>
+            <button class="secondary-button" type="button" data-open-theme>Personalizar la app</button>
             <button class="danger-button logout-button" type="button" data-action="logout">Cerrar sesión</button>
           </div>
         </div>
@@ -2902,7 +3058,7 @@ function themeOptionsMarkup() {
     <label class="theme-option">
       <input type="radio" name="superlist-theme-mode" value="${mode.id}" data-theme-mode-input
         ${mode.id === storedMode ? "checked" : ""} />
-      <span class="theme-option-body"><span aria-hidden="true">${mode.icon}</span>${mode.label}</span>
+      <span class="theme-option-body">${themeModeIcon(mode.id)}<span>${escapeHtml(mode.label)}</span></span>
     </label>`).join("");
 
   const paletteOptions = THEME_PALETTES.map((palette) => `
@@ -2911,7 +3067,7 @@ function themeOptionsMarkup() {
         ${palette.id === activePalette.id ? "checked" : ""} />
       <span class="theme-option-body">
         <span class="theme-swatch" style="--swatch-light:${palette.light}; --swatch-dark:${palette.dark}; background:${palette.light};" aria-hidden="true"></span>
-        <span>${palette.emoji} ${escapeHtml(palette.label)}</span>
+        <span>${escapeHtml(palette.label)}</span>
       </span>
     </label>`).join("");
 
@@ -2921,11 +3077,14 @@ function themeOptionsMarkup() {
       ? `Sigue a tu dispositivo (ahora: ${getActiveThemeMode() === "dark" ? "oscuro" : "claro"}).`
       : `Elegiste el modo ${modeLabel.toLowerCase()}.`;
 
+  const isDark = getActiveThemeMode() === "dark";
+  const modeLabelShort = isDark ? "Oscuro" : "Claro";
+
   return `
     <div class="theme-preview">
       <span class="theme-swatch" style="--swatch: var(--accent); background: var(--accent);" aria-hidden="true"></span>
       <span class="theme-preview-text">
-        <strong>${activePalette.emoji} ${escapeHtml(activePalette.label)} · ${getActiveThemeMode() === "dark" ? "🌙 Oscuro" : "☀️ Claro"}</strong>
+        <strong>${escapeHtml(activePalette.label)} · ${modeLabelShort}</strong>
         <span>${escapeHtml(systemNote)}</span>
       </span>
     </div>
@@ -3000,15 +3159,23 @@ function bindThemeControls() {
   });
 }
 
-// Refleja en el boton flotante el modo y la paleta que estan activos.
+// Refleja en la tarjeta de Inicio el modo y la paleta que estan activos.
 function updateThemeButton() {
-  const button = document.querySelector("#theme-fab");
-  if (!button) return;
+  const entry = document.querySelector(".theme-entry");
+  if (!entry) return;
   const dark = getActiveThemeMode() === "dark";
   const palette = getPaletteById(getActivePalette());
-  button.setAttribute("aria-label", `Tema: ${palette.label}, ${dark ? "oscuro" : "claro"}. Cambiar`);
-  button.setAttribute("title", `Tema: ${palette.label} · ${dark ? "Oscuro" : "Claro"}`);
-  button.setAttribute("data-mode", dark ? "dark" : "light");
+  const modeText = readStoredThemeMode() === "auto" ? "Automático" : dark ? "Oscuro" : "Claro";
+
+  const swatch = entry.querySelector(".theme-entry-swatch");
+  if (swatch) {
+    swatch.style.setProperty("--swatch-light", palette.light);
+    swatch.style.setProperty("--swatch-dark", palette.dark);
+    swatch.style.background = dark ? palette.dark : palette.light;
+  }
+  const detail = entry.querySelector(".theme-entry-text span");
+  if (detail) detail.textContent = `${palette.label} · ${modeText}`;
+  entry.setAttribute("aria-label", `Personalizar el tema. Actual: ${palette.label}, ${modeText.toLowerCase()}`);
 }
 
 function memberRow(member, group) {
@@ -3254,6 +3421,12 @@ function bindCommonActions() {
       if (action === "edit-group-emoji") {
         const group = state.groups.find((item) => item.id === id);
         if (!group) return;
+        // La politica de Supabase para shopping_groups_update usa is_group_member:
+        // cualquier miembro puede editar nombre y emoji. Se replica esa misma
+        // regla aca; no se amplia ni se restringe.
+        const user = currentUser();
+        const isMember = group.members.some((member) => member.userId === user?.id);
+        if (!user || !isMember) return;
         pendingEditGroupId = id;
         const form = editGroupForm;
         if (!form) return;

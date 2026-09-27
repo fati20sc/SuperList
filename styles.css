@@ -20,6 +20,12 @@
   --accent-soft-l: #e5eddc;
   --accent-soft-d: #1d2d1a;
 
+  /* Texto con tinte del tema: cada paleta redefine estos cuatro valores
+     mezclando su acento (18%) con el gris base. Si ninguna paleta esta
+     activa, mandan los de abajo (el verde original, que es el default). */
+  --text-l: #415747; --text-muted-l: #556f5c;
+  --text-d: #b4baa9; --text-muted-d: #989b87;
+
   /* Modo claro (valores base) */
   --bg: #f8f5ee;
   --surface: #fffaf0;
@@ -27,8 +33,8 @@
   --surface-3: #ede6d7;
   --surface-4: #efe7d9;
   --surface-menu: #faf8f2;
-  --text: #3d4f46;
-  --text-muted: #566c60;
+  --text: var(--text-l);
+  --text-muted: var(--text-muted-l);
   --line: #e7dfd0;
   --line-dashed: #d8ceb9;
   --line-dashed-2: #cbbfaa;
@@ -120,8 +126,8 @@
   --surface-3: #35302a;
   --surface-4: #322d27;
   --surface-menu: #22201c;
-  --text: #c8c4bc;
-  --text-muted: #a59e93;
+  --text: var(--text-d);
+  --text-muted: var(--text-muted-d);
   --line: #3d372f;
   --line-dashed: #4a433a;
   --line-dashed-2: #574f45;
@@ -183,49 +189,74 @@
 }
 
 /* ------------------------------- PALETAS ---------------------------------- */
-/* Solo redefinen el acento: fondos, textos y componentes no cambian.
-   "verde" es la paleta original de SuperList y la que se aplica por defecto. */
+/* Redefinen el acento y el tinte del texto (18% del acento mezclado con el
+   gris base, para que el texto acompañe al tema sin perder contraste).
+   Fondos, superficies y componentes no cambian.
+   "verde" es la paleta original de SuperList y la que se aplica por defecto.
+   Los cuatro "--text-*" estan validados con WCAG AA en ambos modos. */
 [data-palette="verde"] {
   --accent-l: #517d49; --accent-ink-l: #4f7b48;
   --accent-d: #5b8e52; --accent-ink-d: #629959;
   --accent-rgb-l: 81, 125, 73; --accent-rgb-d: 91, 142, 82;
   --accent-soft-l: #e5eddc; --accent-soft-d: #1d2d1a;
+  --text-l: #415747; --text-muted-l: #556f5c;
+  --text-d: #b4baa9; --text-muted-d: #989b87;
 }
 [data-palette="lila"] {
   --accent-l: #8365a5; --accent-ink-l: #775998;
   --accent-d: #8f77ab; --accent-ink-d: #a591bc;
   --accent-rgb-l: 131, 101, 165; --accent-rgb-d: 143, 119, 171;
   --accent-soft-l: #ede6e3; --accent-soft-d: #342e32;
+  --text-l: #4a5357; --text-muted-l: #5e6b6c;
+  --text-d: #beb6b9; --text-muted-d: #a19797;
 }
 [data-palette="rojo"] {
   --accent-l: #b0594c; --accent-ink-l: #9e5044;
   --accent-d: #b76e63; --accent-ink-d: #c58b82;
   --accent-rgb-l: 176, 89, 76; --accent-rgb-d: 183, 110, 99;
   --accent-soft-l: #f2e5db; --accent-soft-d: #3a2e29;
+  --text-l: #525147; --text-muted-l: #66695c;
+  --text-d: #c5b5ac; --text-muted-d: #a8958a;
+}
+[data-palette="rosa"] {
+  --accent-l: #a8496b; --accent-ink-l: #98425f;
+  --accent-d: #c86d8f; --accent-ink-d: #db93ad;
+  --accent-rgb-l: 168, 73, 107; --accent-rgb-d: 200, 109, 143;
+  --accent-soft-l: #f2e2e8; --accent-soft-d: #382a2f;
+  --text-l: #504e4d; --text-muted-l: #656662;
+  --text-d: #c8b4b4; --text-muted-d: #ab9592;
 }
 [data-palette="azul"] {
   --accent-l: #4b7892; --accent-ink-l: #436b82;
   --accent-d: #5887a2; --accent-ink-d: #7aa1b7;
   --accent-rgb-l: 75, 120, 146; --accent-rgb-d: 88, 135, 162;
   --accent-soft-l: #e9eae4; --accent-soft-d: #303333;
+  --text-l: #405654; --text-muted-l: #546e69;
+  --text-d: #b4b9b7; --text-muted-d: #979a96;
 }
 [data-palette="turquesa"] {
   --accent-l: #3b7d76; --accent-ink-l: #35706a;
   --accent-d: #478d86; --accent-ink-d: #5baca4;
   --accent-rgb-l: 59, 125, 118; --accent-rgb-d: 71, 141, 134;
   --accent-soft-l: #e9ede4; --accent-soft-d: #303732;
+  --text-l: #3d574f; --text-muted-l: #516f64;
+  --text-d: #b1bab2; --text-muted-d: #949b91;
 }
 [data-palette="naranja"] {
   --accent-l: #9f6538; --accent-ink-l: #8e5a32;
   --accent-d: #b07344; --accent-ink-d: #c59169;
   --accent-rgb-l: 159, 101, 56; --accent-rgb-d: 176, 115, 68;
   --accent-soft-l: #f3e8da; --accent-soft-d: #3b3128;
+  --text-l: #4f5343; --text-muted-l: #636b59;
+  --text-d: #c4b5a6; --text-muted-d: #a79685;
 }
 [data-palette="amarillo"] {
   --accent-l: #886f30; --accent-ink-l: #7a642b;
   --accent-d: #997e3b; --accent-ink-d: #ba9c4e;
   --accent-rgb-l: 136, 111, 48; --accent-rgb-d: 153, 126, 59;
   --accent-soft-l: #f3ecda; --accent-soft-d: #3b3528;
+  --text-l: #4b5542; --text-muted-l: #5f6d57;
+  --text-d: #c0b7a5; --text-muted-d: #a39883;
 }
 
 
@@ -1712,62 +1743,305 @@ h3 {
    Usa los mismos tokens y formas que el resto de la interfaz.
    ========================================================================== */
 
-/* Boton flotante: siempre visible, esquina inferior derecha. Vive fuera de las
-   vistas, por eso esta disponible en toda la pagina. */
-.theme-fab {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  /* 30: por encima del fondo del menu (20) pero por debajo del menu lateral
-     (40) y del overlay de productos (50), que son modales y deben taparlo. */
-  z-index: 30;
+/* ------------------------------- EMOJI ------------------------------------ */
+/* Emoji del encabezado de la lista abierta. Como es un <button>, necesita
+   resetear los estilos por defecto del navegador. */
+.list-detail-emoji {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent-tint);
+  color: var(--text);
+  font-size: 1.7rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.list-detail-emoji-button {
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.list-detail-emoji-button:hover {
+  background: var(--accent-tint-strong);
+  transform: scale(1.06);
+}
+
+.list-detail-emoji-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Campo de emoji del dialogo. El input sigue editable a mano; el boton de al
+   lado abre el selector. */
+.emoji-field {
+  display: grid;
+  gap: 6px;
+}
+
+.emoji-field > span {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.emoji-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.emoji-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.2rem;
+}
+
+.emoji-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.emoji-picker-toggle {
+  flex: 0 0 auto;
+  width: 46px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--glass-strong);
-  color: var(--accent-ink);
-  box-shadow: var(--shadow-card);
+  border-radius: 14px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 1.3rem;
+  line-height: 1;
   cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.theme-fab:hover {
-  transform: translateY(-2px);
+.emoji-picker-toggle:hover {
+  background: var(--accent-soft);
   border-color: var(--accent);
-  box-shadow: var(--accent-glow);
 }
 
-.theme-fab:focus-visible {
+.emoji-picker-toggle:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline-offset: 1px;
 }
 
-/* Solo se ve el icono del modo activo. Sin data-mode se muestra el sol
-   (el boton se actualiza al iniciar el tema, antes de pintar). */
-.theme-fab .theme-fab-moon {
-  display: none;
+/* Selector desplegable de emojis. */
+.emoji-picker {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
 }
 
-.theme-fab[data-mode="dark"] .theme-fab-sun {
-  display: none;
+.emoji-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
 }
 
-.theme-fab[data-mode="dark"] .theme-fab-moon {
+.emoji-picker-item {
+  aspect-ratio: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.emoji-picker-item:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  transform: scale(1.08);
+}
+
+.emoji-picker-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.emoji-picker-close {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.emoji-picker-close:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* ------------------------------- CATEGORIAS ------------------------------ */
+/* Chips visibles de categoria. Mismo lenguaje visual que .state-picker. */
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text);
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.category-chip:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.category-chip.is-selected,
+.category-chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-solid);
+  border-color: var(--accent);
+}
+
+.category-chip.is-selected:hover,
+.category-chip[aria-pressed="true"]:hover {
+  background: var(--accent);
+}
+
+.category-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------- CENTRADO DE LAS LISTAS ------------------------ */
+/* En las tarjetas de listas, el emoji y el nombre van centrados como un bloque.
+   Se limita a .list-card y .grid-lists para no tocar las tarjetas de productos.
+   El h2 global trae margin-bottom: 14px, que en un encabezado de dos lineas
+   dejaba un hueco visible por debajo; se anula solo aca. */
+.list-card .product-title-row,
+.grid-lists .product-title-row {
+  justify-content: center;
+  text-align: center;
+  margin-bottom: 2px;
+}
+
+.list-card .product-title-row h2,
+.list-detail-header h2 {
+  margin-bottom: 0;
+}
+
+.list-detail-header {
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+/* Acceso a la personalizacion: tarjeta en Inicio. Reemplaza al antiguo boton
+   flotante, que vivia fijo en la esquina y tapaba contenido. */
+.theme-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.theme-entry:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.theme-entry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.theme-entry-swatch {
+  width: 30px;
+  height: 30px;
+}
+
+.theme-entry-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.theme-entry-text strong {
+  font-size: 0.92rem;
+  font-weight: 850;
+}
+
+.theme-entry-text span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.theme-entry-chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+/* Icono SVG de los modos de tema (reemplaza los emojis anteriores). */
+.theme-mode-icon {
+  flex: 0 0 auto;
   display: block;
+  width: 18px;
+  height: 18px;
+  color: var(--text);
 }
 
-/* Zona tactil comoda en celular sin agrandar el icono visible. */
-.theme-fab::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
+/* Cuando el encabezado lleva "vertical", el contenido se apila en columna y
+   queda centrado. Sin esto, titulo y emoji quedan en una sola linea. */
+.panel-head.vertical {
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
 }
 
 .theme-dialog-form {
