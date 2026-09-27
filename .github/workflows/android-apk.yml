@@ -47,7 +47,7 @@ jobs:
         run: |
           # Remove anydpi-v26 XMLs so Android uses pure transparent PNG icons without white borders
           rm -rf android/app/src/main/res/mipmap-anydpi-v26
-          ICON_SRC=mi-casa/logo-512.png
+          ICON_SRC=logo-512.png
           if [ ! -f "$ICON_SRC" ]; then ICON_SRC=logo.png; fi
           for dir in android/app/src/main/res/mipmap-*; do
             if [ -d "$dir" ]; then
