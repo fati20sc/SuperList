@@ -562,6 +562,7 @@ const changePasswordDialog = document.querySelector("#change-password-dialog");
 const changePasswordForm = document.querySelector("#change-password-form");
 const changePasswordMessage = document.querySelector("#change-password-message");
 let pendingDeleteGroupId = null;
+let pendingRemoveMemberId = null;
 const editGroupDialog = document.querySelector("#edit-group-dialog");
 const editGroupForm = document.querySelector("#edit-group-form");
 let pendingEditGroupId = null;
@@ -776,16 +777,27 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelector("#close-dialog")?.addEventListener("click", () => dialog.close());
   document.querySelector("#status-overlay-close")?.addEventListener("click", closeStatusOverlay);
   document.querySelector("#status-overlay-backdrop")?.addEventListener("click", closeStatusOverlay);
-  document.querySelector("#confirm-close")?.addEventListener("click", () => confirmDialog.close());
-  document.querySelector("#confirm-cancel")?.addEventListener("click", () => {
+  document.querySelector("#confirm-close")?.addEventListener("click", () => {
     pendingDeleteGroupId = null;
+    pendingRemoveMemberId = null;
     confirmDialog.close();
   });
-  document.querySelector("#confirm-delete")?.addEventListener("click", () => {
-    if (pendingDeleteGroupId) {
+  document.querySelector("#confirm-cancel")?.addEventListener("click", () => {
+    pendingDeleteGroupId = null;
+    pendingRemoveMemberId = null;
+    confirmDialog.close();
+  });
+  document.querySelector("#confirm-delete")?.addEventListener("click", async () => {
+    if (pendingRemoveMemberId) {
+      await removeMember(pendingRemoveMemberId);
+      pendingRemoveMemberId = null;
+    } else if (pendingDeleteGroupId) {
       deleteGroup(pendingDeleteGroupId);
     }
     pendingDeleteGroupId = null;
+    // Restaurar la etiqueta del boton para el proximo uso (borrar lista).
+    const deleteBtn = document.querySelector("#confirm-delete");
+    if (deleteBtn) deleteBtn.textContent = "Borrar lista";
     confirmDialog.close();
   });
   document.querySelector("#edit-group-close")?.addEventListener("click", () => {
@@ -1861,7 +1873,42 @@ async function joinGroup(code) {
   currentView = "home";
   persist();
   await loadAppData();
+  // Avisar al resto de la lista de que este usuario se sumo. A los que ya
+  // estaban les llega por Realtime; a los que no, al recargar.
+  await notifyMembersAboutMembership(
+    group.id,
+    `${getUserDisplayName(user)} se unió a la lista`,
+    `join-${group.id}-${user.id}`
+  );
   return true;
+}
+
+// Avisa al resto de la lista sobre un movimiento de miembros. Reutiliza el
+// broadcast de Realtime que ya existe; quien lo hizo no lo recibe (lo filtra
+// handleIncomingNotification por actorId).
+async function notifyMembersAboutMembership(groupId, message, dedupKey) {
+  await broadcastGroupNotification({
+    id: `notif-${dedupKey}`,
+    dedupKey,
+    groupId,
+    message,
+    title: "Lista compartida",
+    actorId: currentUser()?.id || null,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+// Abre el dialogo de editar lista con los datos cargados. La usan tanto el
+// boton "Editar" de Mis listas como el del emoji del encabezado.
+function openEditGroupDialog(group) {
+  const form = editGroupForm;
+  if (!form) return;
+  pendingEditGroupId = group.id;
+  form.elements.id.value = group.id;
+  form.elements.name.value = group.name;
+  form.elements.emoji.value = group.emoji || "🏠";
+  bindEmojiOnlyInput(form.elements.emoji);
+  editGroupDialog?.showModal();
 }
 
 function memberRole(group = getCurrentGroup()) {
@@ -2932,6 +2979,8 @@ function renderLists() {
               </div>
               <div class="product-actions compact-actions">
                 <button class="secondary-button" type="button" data-action="select-list" data-id="${group.id}">Abrir</button>
+                <button class="secondary-button" type="button" data-action="edit-group" data-id="${group.id}"
+                        aria-label="Editar ${escapeHtml(group.name)}">Editar</button>
                 ${memberRole(group) === "admin" ? `<button class="danger-button danger-inline" type="button" data-action="delete-list" data-id="${group.id}">Borrar</button>` : ""}
               </div>
             </article>
@@ -2994,7 +3043,13 @@ function renderSettings() {
         ${group.type === "shared" && group.inviteCode ? `
         <div class="invite-box">
           <span>Código de invitación</span>
-          <strong>${escapeHtml(group.inviteCode)}</strong>
+          <strong class="invite-code-value">${escapeHtml(group.inviteCode)}</strong>
+          <div class="invite-box-actions">
+            <button class="secondary-button" type="button" data-action="copy-invite-code"
+                    data-code="${escapeHtml(group.inviteCode)}">Copiar código</button>
+            ${role === "admin" ? `<button class="secondary-button" type="button" data-action="regenerate-invite-code">Cambiar código</button>` : ""}
+          </div>
+          ${role === "admin" ? `<p class="invite-box-hint">Al cambiarlo, el código anterior deja de funcionar.</p>` : ""}
         </div>
         ` : `
         <div class="invite-box">
@@ -3178,6 +3233,47 @@ function updateThemeButton() {
   entry.setAttribute("aria-label", `Personalizar el tema. Actual: ${palette.label}, ${modeText.toLowerCase()}`);
 }
 
+// Copia el codigo de invitacion al portapapeles. Reutiliza el mismo
+// navigator.clipboard que usa showInviteCodeMessage().
+async function copyInviteCode(code) {
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code);
+    showNotification(`Código copiado: ${code}`, "success");
+  } catch (error) {
+    // Si el portapapeles falla (permisos o http), al menos se lo mostramos.
+    showNotification(`No se pudo copiar. El código es: ${code}`, "info");
+  }
+}
+
+// Genera un codigo nuevo para la lista. Solo admin: cambiarlo afecta a todos
+// los que todavia no se unieron, asi que se restringe a ese rol.
+async function regenerateInviteCode() {
+  const group = getCurrentGroup();
+  if (!group || group.type !== "shared") return;
+  if (memberRole(group) !== "admin") {
+    showNotification("Solo el administrador puede cambiar el código.", "error");
+    return;
+  }
+
+  const next = createInviteCode();
+  try {
+    await runSupabase(
+      supabaseClient.from(GROUPS_TABLE).update({ invite_code: next }).eq("id", group.id),
+      "No se pudo cambiar el código."
+    );
+  } catch (error) {
+    // runSupabase ya mostro el aviso; no seguimos con el estado local.
+    console.error(error);
+    return;
+  }
+
+  group.inviteCode = next;
+  persist();
+  renderSettings();
+  showNotification(`Código nuevo: ${next}. El anterior ya no funciona.`, "success");
+}
+
 function memberRow(member, group) {
   const user = state.users.find((item) => item.id === member.userId);
   const displayName = member.name || user?.name || member.email || user?.email || "Usuario";
@@ -3189,7 +3285,11 @@ function memberRow(member, group) {
         <div class="product-name">${escapeHtml(displayName)}</div>
         <div class="product-meta"><span>${escapeHtml(member.role)}</span>${displayEmail && displayEmail !== displayName ? `<span>${escapeHtml(displayEmail)}</span>` : ""}</div>
       </div>
-      ${canRemove ? `<button class="danger-button" type="button" data-action="remove-member" data-id="${member.userId}">✖</button>` : ""}
+      ${canRemove ? `
+        <button class="danger-button danger-inline remove-member-button" type="button" data-action="remove-member" data-id="${member.userId}"
+                aria-label="Quitar a ${escapeHtml(displayName)} de la lista"
+                title="Quitar de la lista">Quitar</button>
+      ` : ""}
     </article>
   `;
 }
@@ -3359,6 +3459,16 @@ function bindCommonActions() {
       }
       if (action === "add") openProductDialog();
       if (action === "edit") openProductDialog(getProduct(id));
+      if (action === "copy-invite-code") {
+        await copyInviteCode(button.dataset.code || "");
+        event.stopPropagation();
+        return;
+      }
+      if (action === "regenerate-invite-code") {
+        await regenerateInviteCode();
+        event.stopPropagation();
+        return;
+      }
       if (action === "delete") {
         await deleteProduct(id);
         return;
@@ -3418,7 +3528,7 @@ function bindCommonActions() {
         render();
         return;
       }
-      if (action === "edit-group-emoji") {
+      if (action === "edit-group" || action === "edit-group-emoji") {
         const group = state.groups.find((item) => item.id === id);
         if (!group) return;
         // La politica de Supabase para shopping_groups_update usa is_group_member:
@@ -3427,14 +3537,7 @@ function bindCommonActions() {
         const user = currentUser();
         const isMember = group.members.some((member) => member.userId === user?.id);
         if (!user || !isMember) return;
-        pendingEditGroupId = id;
-        const form = editGroupForm;
-        if (!form) return;
-        form.elements.id.value = group.id;
-        form.elements.name.value = group.name;
-        form.elements.emoji.value = group.emoji || "🏠";
-        bindEmojiOnlyInput(form.elements.emoji);
-        editGroupDialog?.showModal();
+        openEditGroupDialog(group);
         return;
       }
       if (action === "delete-list") {
@@ -3448,7 +3551,27 @@ function bindCommonActions() {
         confirmDialog?.showModal();
         return;
       }
-      if (action === "remove-member") await removeMember(id);
+      if (action === "remove-member") {
+        const group = getCurrentGroup();
+        if (!group) return;
+        if (memberRole(group) !== "admin") {
+          showNotification("Solo el administrador puede quitar miembros.", "error");
+          return;
+        }
+        if (id === currentUser()?.id) return;
+        const member = group.members.find((item) => item.userId === id);
+        const memberName = member?.name || member?.email || "este miembro";
+        pendingRemoveMemberId = id;
+        const messageEl = document.querySelector("#confirm-dialog-message");
+        const titleEl = document.querySelector("#confirm-dialog-title");
+        const deleteBtn = document.querySelector("#confirm-delete");
+        if (titleEl) titleEl.textContent = "Quitar miembro";
+        if (messageEl) messageEl.textContent = `¿Quitar a ${memberName} de la lista? Va a poder unirse otra vez con el código.`;
+        if (deleteBtn) deleteBtn.textContent = "Quitar";
+        confirmDialog?.showModal();
+        event.stopPropagation();
+        return;
+      }
       event.stopPropagation();
     });
   });
@@ -3531,13 +3654,31 @@ async function deleteGroup(groupId) {
 
 async function removeMember(userId) {
   const group = getCurrentGroup();
-  if (memberRole(group) !== "admin") return;
+  if (!group) return;
+  if (memberRole(group) !== "admin") {
+    showNotification("Solo el administrador puede quitar miembros.", "error");
+    return;
+  }
+  // No permitir que el admin se quite a si mismo por la via de eliminar.
+  if (userId === currentUser()?.id) return;
+
+  const member = group.members.find((item) => item.userId === userId);
+  const memberName = member?.name || member?.email || "el miembro";
+
   await runSupabase(
     supabaseClient.from(MEMBERS_TABLE).delete().eq("group_id", group.id).eq("user_id", userId),
     "No se pudo quitar el miembro."
   );
-  group.members = group.members.filter((member) => member.userId !== userId);
+  group.members = group.members.filter((item) => item.userId !== userId);
   persist();
+
+  // Avisar al resto de la lista de que se fue alguien.
+  await notifyMembersAboutMembership(
+    group.id,
+    `${memberName} fue quitado de la lista`,
+    `remove-${group.id}-${userId}`
+  );
+  showNotification(`Quitaste a ${memberName} de la lista.`, "success");
   renderSettings();
 }
 

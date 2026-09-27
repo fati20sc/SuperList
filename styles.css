@@ -1253,6 +1253,28 @@ h3 {
   letter-spacing: 0.04em;
 }
 
+.invite-box .invite-code-value {
+  word-break: break-all;
+  user-select: all;
+}
+
+.invite-box-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.invite-box-hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.remove-member-button {
+  min-width: 72px;
+}
+
 .search-input,
 .field input,
 .field textarea,

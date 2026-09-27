@@ -187,10 +187,38 @@ FOR INSERT TO authenticated
 WITH CHECK (auth.uid() IS NOT NULL);
 
 DROP POLICY IF EXISTS "shopping_groups_update" ON public.shopping_groups;
+-- Cualquier miembro puede editar nombre/emoji (regla que ya usa el frontend),
+-- pero el codigo de invitacion NO se puede tocar aca: se protege con el trigger
+-- protect_group_invite_code mas abajo, que exige rol admin.
 CREATE POLICY "shopping_groups_update" ON public.shopping_groups
 FOR UPDATE TO authenticated
 USING (is_group_member(id, auth.uid()))
 WITH CHECK (is_group_member(id, auth.uid()));
+
+-- 10b. Trigger: solo el admin puede cambiar el codigo de invitacion
+-- Una politica RLS no puede comparar la fila vieja con la nueva, asi que la
+-- restriccion del invite_code se hace con un trigger BEFORE UPDATE.
+CREATE OR REPLACE FUNCTION public.protect_group_invite_code()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.invite_code IS DISTINCT FROM OLD.invite_code THEN
+    IF NOT (public.is_group_admin(OLD.id, auth.uid()) OR OLD.created_by = auth.uid()) THEN
+      RAISE EXCEPTION 'Solo el administrador puede cambiar el codigo de invitacion'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_group_invite_code_update ON public.shopping_groups;
+CREATE TRIGGER on_group_invite_code_update
+  BEFORE UPDATE ON public.shopping_groups
+  FOR EACH ROW EXECUTE FUNCTION public.protect_group_invite_code();
 
 DROP POLICY IF EXISTS "shopping_groups_delete" ON public.shopping_groups;
 CREATE POLICY "shopping_groups_delete" ON public.shopping_groups
