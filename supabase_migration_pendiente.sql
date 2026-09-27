@@ -50,6 +50,37 @@ USING (user_id = auth.uid())
 WITH CHECK (user_id = auth.uid());
 
 
+-- 0b) Tokens de FCM para el APK -------------------------------------------------
+-- El plugin nativo de Capacitor no usa la Push API del navegador: se registra
+-- con Firebase y recibe un token (no un endpoint). Por eso va en su propia
+-- tabla, y no se puede meter en push_subscriptions.
+--
+-- La clave es (user_id, token) y NO UNIQUE(user_id): una misma persona puede
+-- tener el APK en dos teléfonos, o el APK y la PWA, y hay que avisarle por
+-- todos los canales.
+CREATE TABLE IF NOT EXISTS public.device_tokens (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    token TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'android',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (user_id, token)
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON public.device_tokens(user_id);
+
+ALTER TABLE public.device_tokens ENABLE ROW LEVEL SECURITY;
+
+-- Igual que push_subscriptions: cada uno solo administra sus propios tokens.
+-- La Edge Function los lee con service_role, que ignora RLS.
+DROP POLICY IF EXISTS "device_tokens_own" ON public.device_tokens;
+CREATE POLICY "device_tokens_own" ON public.device_tokens
+    FOR ALL TO authenticated
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
+
+
 -- 1) Tabla de solicitudes de ingreso --------------------------------------------
 CREATE TABLE IF NOT EXISTS public.shopping_join_requests (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -171,10 +202,15 @@ END $$;
 --    desde el propio cliente. Hay un ejemplo de llamada arriba del archivo
 --    supabase/functions/send-push/index.ts.
 --
--- IMPORTANTE Y REAL: la Push API de los navegadores NO existe dentro de un
--- WebView de Android, que es lo que usa el APK de Capacitor. O sea: en el APK
--- el botón va a decir "no disponibles acá", porque es la verdad. Para que
--- funcione dentro del APK hay que instalar el plugin nativo
--- @capacitor/push-notifications y configurar FCM, que es un trabajo aparte.
--- En el navegador y en la PWA sí funciona de verdad.
+-- 4) PARA QUE EL APK ALSO RECIBA NOTIFICACIONES (Firebase):
+--    La Push API de los navegadores no existe dentro de un WebView de Android,
+--    asi que en el APK las notificaciones llegan por FCM, no por VAPID. Eso
+--    usa la tabla device_tokens de mas arriba y necesita, una sola vez:
+--      a) Crear el proyecto en Firebase con el mismo package name
+--         (com.rosario.superlist) y bajar google-services.json a la raiz del repo.
+--      b) Registrar en Firebase el SHA-1 de la clave de firma:
+--         A7:FB:F6:E2:AC:94:D2:DF:90:9D:4D:2C:4E:AF:3C:27:CF:1B:2A:56
+--         Sin esto, Android entrega el token pero Google no manda nada.
+--      c) La Edge Function send-push tiene que poder enviar a device_tokens.
+--    En el navegador y en la PWA sigue mandando VAPID como siempre.
 -- ==============================================================================

@@ -2,6 +2,18 @@ node_modules/
 outputs/mi-casa/node_modules/
 .DS_Store
 
+# El proyecto de Android lo genera el workflow con "npx cap add android".
+# No tiene sentido versionarlo: se reconstruye en cada build.
+android/
+www/
+
+# OJO: android-keys/ NO se ignora a proposito. La clave de firma tiene que ser
+# SIEMPRE la misma, porque Firebase identifica el telefono por el certificado
+# que firma el APK. Si la clave fuera un secreto regenerado por build, Google
+# rechazaria el token y las notificaciones nunca llegarian.
+# Lo que no se versiona es google-services.json si preferis subirlo como secreto
+# del workflow en vez de dejarlo en el repo.
+
 # Temporales de herramientas y pruebas
 _app_backup.js
 _app_buggy.js

@@ -60,6 +60,9 @@ async function initApp() {
     if (currentUser()) {
       await loadAppData();
       setupRealtimeSubscription();
+      // Escucha las notificaciones nativas de Android. En el navegador esta
+      // funcion no hace nada (no hay plugin), asi que se puede llamar siempre.
+      listenToNativeNotifications();
     }
   } catch (error) {
     console.error("Error al inicializar la aplicación:", error);

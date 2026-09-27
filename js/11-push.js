@@ -1,18 +1,21 @@
 // =======================================================================
 // 11-push.js
 //
-// Notificaciones push (Web Push / VAPID).
+// Notificaciones push: Web Push (VAPID) en el navegador, FCM nativo en el APK.
 //
 // QUE RESUELVE: hasta ahora los avisos solo se veían con la app abierta, como
 // un cartelito dentro de la página. Con esto, un usuario que cerró la app
 // recibe la notificación igual que cualquier app del teléfono.
 //
-// LIMITACIÓN IMPORTANTE Y REAL: la Push API NO existe dentro de un WebView de
-// Android, que es lo que usa el APK de Capacitor. Ahí este código detecta que
-// no hay soporte y lo dice, en vez de prometer algo que no va a pasar. Para
-// que funcione dentro del APK hay que agregar notificaciones nativas con FCM
-// (plugin @capacitor/push-notifications). En el navegador y en la PWA sí
-// funciona de verdad.
+// DOS CAMINOS, SEGUN DONDE CORRA:
+//   - Navegador / PWA: Web Push con VAPID (este archivo).
+//   - APK de Android: notificaciones nativas de Firebase, en
+//     js/12-push-native.js. La Push API de los navegadores no existe dentro de
+//     un WebView de Android, así que en el APK esto delega en el plugin nativo.
+//
+// En ambos casos el token se guarda en Supabase y la Edge Function send-push
+// manda el aviso. En el navegador la clave privada VAPID es un secreto de
+// Supabase; en Android el envío lo hace la cuenta de Firebase (service account).
 // =======================================================================
 
 // Clave pública VAPID. La privada NUNCA va en el cliente: va como secreto de la
@@ -34,6 +37,9 @@ function urlBase64ToUint8Array(base64String) {
 // Pide permiso y guarda la suscripción del dispositivo para este usuario.
 // Devuelve { ok: true } o { ok: false, motivo }.
 async function enablePushNotifications() {
+  // Dentro del APK no hay Push API, pero sí notificaciones nativas con FCM.
+  if (isNativeApp()) return registerNativePush();
+
   const unsupported = pushUnsupportedReason();
   if (unsupported) return { ok: false, motivo: unsupported };
 
@@ -70,6 +76,19 @@ async function enablePushNotifications() {
 
 // Da de baja la suscripción de este dispositivo.
 async function disablePushNotifications() {
+  const user = currentUser();
+  if (!user) return { ok: true };
+
+  // En el APK se borra el token FCM de la base.
+  if (isNativeApp()) {
+    const { error } = await supabaseClient
+      .from(DEVICE_TOKENS_TABLE)
+      .delete()
+      .eq("user_id", user.id);
+    if (error) console.warn("No se pudo borrar el token del dispositivo:", error);
+    return { ok: true };
+  }
+
   try {
     const registration = await getServiceWorkerRegistration();
     const subscription = await registration?.pushManager.getSubscription();
@@ -77,15 +96,12 @@ async function disablePushNotifications() {
   } catch (error) {
     console.warn("No se pudo cancelar la suscripción local:", error);
   }
-  const user = currentUser();
-  if (user) {
-    await supabaseClient
-      .from(PUSH_TABLE)
-      .delete()
-      .eq("user_id", user.id)
-      .then(() => {})
-      .catch((error) => console.warn(error));
-  }
+  await supabaseClient
+    .from(PUSH_TABLE)
+    .delete()
+    .eq("user_id", user.id)
+    .then(() => {})
+    .catch((error) => console.warn(error));
   return { ok: true };
 }
 
@@ -116,6 +132,27 @@ async function savePushSubscription(subscription) {
 
 // Estado para pintar el botón de la interfaz.
 async function getPushStatus() {
+  // En el APK el estado real es si hay un token FCM guardado para este usuario.
+  if (isNativeApp()) {
+    const granted = nativePushAvailable()
+      ? (await PushNotifications.checkPermissions().catch(() => ({ display: "prompt" }))).display
+      : "prompt";
+    if (granted === "granted") {
+      const hasToken = await hasDeviceToken();
+      return { state: hasToken ? "enabled" : "default", reason: "" };
+    }
+    if (granted === "denied") {
+      return { state: "denied", reason: "Android tiene las notificaciones bloqueadas para SuperList." };
+    }
+    if (!nativePushAvailable()) {
+      return {
+        state: "unsupported",
+        reason: "Esta versión del APK se compiló sin Firebase, así que no hay notificaciones.",
+      };
+    }
+    return { state: "default", reason: "" };
+  }
+
   const unsupported = pushUnsupportedReason();
   if (unsupported) return { state: "unsupported", reason: unsupported };
 
