@@ -1258,24 +1258,76 @@ h3 {
   user-select: all;
 }
 
-.invite-box-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-
 .invite-box-hint {
   margin: 6px 0 0;
   color: var(--muted);
   font-size: 0.8rem;
 }
 
-.invite-box-list {
-  margin: 0 0 4px;
-  color: var(--text);
-  font-size: 0.95rem;
-  font-weight: 800;
+.list-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+/* Botones del codigo de invitacion en la tarjeta de cada lista.
+   Usan las variables del tema activo, asi que cambian con la paleta
+   y con el modo claro/oscuro sin estilos duplicados. */
+.code-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.code-button:hover {
+  transform: translateY(-1px);
+}
+
+.code-button:active {
+  transform: translateY(0);
+}
+
+.code-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.code-button-copy {
+  color: var(--on-solid);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.code-button-copy:hover {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+
+/* Cambiar codigo: version secundaria, delineada con el color de acento. */
+.code-button-change {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.code-button-change:hover {
+  color: var(--on-solid);
+  background: var(--accent);
 }
 
 .remove-member-button {

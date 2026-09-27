@@ -2976,6 +2976,18 @@ function renderLists() {
                   <span>${escapeHtml(group.members.length)} miembros</span>
                   ${group.type === "shared" && group.inviteCode ? `<span>${escapeHtml(group.inviteCode)}</span>` : ""}
                 </div>
+                ${group.type === "shared" && group.inviteCode ? `
+                <div class="list-code-actions">
+                  <button class="code-button code-button-copy" type="button" data-action="copy-invite-code"
+                          data-code="${escapeHtml(group.inviteCode)}"
+                          aria-label="Copiar el código de ${escapeHtml(group.name)}">Copiar código</button>
+                  ${memberRole(group) === "admin" ? `
+                  <button class="code-button code-button-change" type="button" data-action="regenerate-invite-code"
+                          data-id="${escapeHtml(group.id)}"
+                          aria-label="Cambiar el código de ${escapeHtml(group.name)}">Cambiar código</button>
+                  ` : ""}
+                </div>
+                ` : ""}
               </div>
               <div class="product-actions compact-actions">
                 <button class="secondary-button" type="button" data-action="select-list" data-id="${group.id}">Abrir</button>
@@ -3026,51 +3038,13 @@ function renderLists() {
   bindCommonActions();
 }
 
-// Bloque de codigo de invitacion de una lista. Se usa para la lista actual y
-// para cada lista compartida cuando no hay ninguna seleccionada.
-function inviteCodeBox(group, options = {}) {
-  if (!group || group.type !== "shared" || !group.inviteCode) return "";
-  const role = memberRole(group);
-  const { showListName = false, switchAction = "switch-invite-group" } = options;
-  return `
-    <div class="invite-box">
-      ${showListName ? `<p class="invite-box-list">${escapeHtml(group.emoji || "🏠")} ${escapeHtml(group.name)}</p>` : ""}
-      <span>Código de invitación</span>
-      <strong class="invite-code-value">${escapeHtml(group.inviteCode)}</strong>
-      <div class="invite-box-actions">
-        <button class="secondary-button" type="button" data-action="copy-invite-code"
-                data-code="${escapeHtml(group.inviteCode)}"
-                aria-label="Copiar el código de ${escapeHtml(group.name)}">Copiar código</button>
-        ${role === "admin" ? `<button class="secondary-button" type="button" data-action="regenerate-invite-code"
-                data-id="${escapeHtml(group.id)}"
-                aria-label="Cambiar el código de ${escapeHtml(group.name)}">Cambiar código</button>` : ""}
-        ${showListName && userGroups().filter((item) => item.type === "shared").length > 1 ? `<button class="secondary-button" type="button" data-action="${switchAction}" data-id="${escapeHtml(group.id)}">Usar esta lista</button>` : ""}
-      </div>
-      ${role === "admin" ? `<p class="invite-box-hint">Al cambiarlo, el código anterior deja de funcionar.</p>` : ""}
-    </div>
-  `;
-}
-
 function renderSettings() {
   const group = getCurrentGroup();
   const user = currentUser();
   const role = memberRole(group);
-  // Todas las listas donde el usuario es miembro: el codigo de invitacion se
-  // muestra siempre, incluso sin lista seleccionada (getCurrentGroup() null).
   const myGroups = userGroups();
-  const sharedGroups = myGroups.filter((item) => item.type === "shared" && item.inviteCode);
-  const inviteSection = sharedGroups.length ? `
-      <section class="panel">
-        <div class="panel-head vertical">
-          <div>
-            <p class="eyebrow">Códigos de invitación</p>
-            <h2>${sharedGroups.length === 1 ? escapeHtml(sharedGroups[0].name) : `${sharedGroups.length} listas compartidas`}</h2>
-          </div>
-        </div>
-        ${sharedGroups.map((item) => inviteCodeBox(item, { showListName: sharedGroups.length > 1 })).join("")}
-        <p class="invite-box-hint">Compartí el código para que alguien más se sume a la lista.</p>
-      </section>
-    ` : "";
+  // Los codigos de invitacion viven en "Mis listas" (renderLists), no aca.
+  // Mi cuenta queda para el perfil y los miembros de la lista abierta.
 
   const groupSection = group ? `
       <section class="panel">
@@ -3085,13 +3059,7 @@ function renderSettings() {
         <div class="invite-box">
           <span>Código de invitación</span>
           <strong class="invite-code-value">${escapeHtml(group.inviteCode)}</strong>
-          <div class="invite-box-actions">
-            <button class="secondary-button" type="button" data-action="copy-invite-code"
-                    data-code="${escapeHtml(group.inviteCode)}">Copiar código</button>
-            ${role === "admin" ? `<button class="secondary-button" type="button" data-action="regenerate-invite-code"
-                    data-id="${escapeHtml(group.id)}">Cambiar código</button>` : ""}
-          </div>
-          ${role === "admin" ? `<p class="invite-box-hint">Al cambiarlo, el código anterior deja de funcionar.</p>` : ""}
+          <p class="invite-box-hint">Para copiarlo o cambiarlo, andá a "Mis listas".</p>
         </div>
         ` : `
         <div class="invite-box">
@@ -3146,7 +3114,6 @@ function renderSettings() {
           </div>
         </div>
       </section>
-      ${inviteSection}
       ${groupSection}
     </section>
   `;
@@ -3595,16 +3562,6 @@ function bindCommonActions() {
           frm.reset();
           dlg.showModal();
         }
-        event.stopPropagation();
-        return;
-      }
-      if (action === "switch-invite-group") {
-        const target = state.groups.find((item) => item.id === id);
-        if (!target) return;
-        session.groupId = id;
-        persist();
-        renderSettings();
-        showNotification(`Abriste ${target.name}.`, "success");
         event.stopPropagation();
         return;
       }
