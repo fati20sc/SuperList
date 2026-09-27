@@ -27,6 +27,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT_REF = "ismweucgziipplsnkwuh";
@@ -108,28 +110,100 @@ function ok(message) {
 //    Se pide acá para poder guardarla en el vault en el mismo paso que crea
 //    el trigger, y para no tener que pegarla a mano en ningun lado.
 // ---------------------------------------------------------------------------
-async function getServiceRoleKey() {
-  const keys = await api("GET", `/projects/${PROJECT_REF}/api-keys`);
-  const service = keys.find((k) => k.name === "service_role");
-  if (!service?.api_key) throw new Error("No se encontro la clave service_role del proyecto.");
-  return service.api_key;
+// La gateway de Edge Functions de Supabase exige DOS headers: "apikey" (con la
+// clave anon) y "Authorization" (con la de servicio). Con solo el segundo
+// responde "Invalid API key" y ni siquiera llega a correr la funcion.
+//
+// Devuelve ambas claves. Formatos: las viejas ("anon"/"service_role", un JWT
+// que empieza con eyJ) y las nuevas ("default", con prefijo sb_publishable_ /
+// sb_secret_). Se prefieren las nuevas y se cae a las viejas.
+// La Management API NO devuelve las claves secretas completas: para
+// sb_secret_ devuelve el prefijo seguido de basura binaria (se vio
+// "sb_secret_6h07a" + caracteres raros, que la gateway rechaza como
+// "Invalid API key"). Las publishable si vienen enteras.
+//
+// Por eso en vez de usar la clave secreta se firma un JWT propio con la clave
+// de firma del proyecto, que si se puede leer. El token lleva role
+// service_role, que es lo que la gateway y la Edge Function necesitan.
+async function getApiKeys() {
+  // 1) La clave publica sale de la Management API (esa si viene entera).
+  const all = await api("GET", `/projects/${PROJECT_REF}/api-keys`);
+  const anon = all.find((k) => String(k.api_key).startsWith("sb_publishable_"))
+    || all.find((k) => k.name === "anon");
+  if (!anon?.api_key) throw new Error("El proyecto no tiene clave anon.");
+
+  // 2) La clave de firma sale de la propia base, con la variable que Supabase
+  // expone para eso.
+  const probes = [
+    "current_setting('app.settings.jwt_secret', true)",
+    "current_setting('pgrst.jwt_secret', true)",
+  ];
+  let jwtSecret = null;
+  for (const probe of probes) {
+    const rows = await api("POST", `/projects/${PROJECT_REF}/database/query`, {
+      query: `SELECT ${probe} AS secret`,
+    });
+    if (rows[0]?.secret) {
+      jwtSecret = rows[0].secret;
+      break;
+    }
+  }
+
+  if (!jwtSecret) {
+    throw new Error(
+      "No se pudo leer la clave de firma del proyecto (app.settings.jwt_secret).\n" +
+      "   Es el unico dato que hace falta y no se puede leer por API. Podes copiarlo\n" +
+      "   en Supabase > Configuracion del proyecto > API > JWT Secret y ponerlo en el\n" +
+      "   archivo supabase-token.txt, asi:  JWT_SECRET=pegar-aqui-la-clave"
+    );
+  }
+
+  const service = mintServiceRoleJwt(jwtSecret);
+  console.log(`   anon: ${anon.api_key.slice(0, 20)}...`);
+  console.log(`   service: JWT con role service_role (${service.length} chars)`);
+  return { anon: anon.api_key, secret: service };
+}
+
+// Arma un JWT con role=service_role firmado con HS256.
+function mintServiceRoleJwt(jwtSecret) {
+  const header = base64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const now = Math.floor(Date.now() / 1000);
+  const payload = base64Url(
+    JSON.stringify({ role: "service_role", iss: "supabase", iat: now, exp: now + 3600 })
+  );
+  const data = `${header}.${payload}`;
+  // createHmac espera la clave cruda; si viene en base64 hay que decodificarla.
+  const rawKey = /^[A-Za-z0-9+/=]+$/.test(jwtSecret) && /[+/=]/.test(jwtSecret)
+    ? Buffer.from(jwtSecret, "base64")
+    : Buffer.from(jwtSecret, "utf8");
+  const signature = createHmac("sha256", rawKey).update(data).digest("base64url");
+  return `${data}.${signature}`;
+}
+
+function base64Url(value) {
+  return Buffer.from(value, "utf8").toString("base64url");
 }
 
 // ---------------------------------------------------------------------------
 // 2) Migracion + vault, en una sola llamada.
 // ---------------------------------------------------------------------------
-async function runMigration(serviceRoleKey) {
+async function runMigration(keys) {
   const migration = readFileSync(join(root, "supabase_migration_pendiente.sql"), "utf8");
 
-  // El archivo trae la linea del vault comentada, porque la clave no puede
-  // quedar escrita en un archivo. Acá se corre de verdad, con la clave real.
-  const vaultStatement = `SELECT vault.create_secret(
-  '${serviceRoleKey}',
-  'SUPABASE_SERVICE_ROLE_KEY',
-  'SuperList: clave de servicio para mandar notificaciones'
-);`;
+  // La clave va en el esquema "private", que PostgREST no expone. Se probó el
+  // Vault de Supabase y en este proyecto la vista vault.decrypted_secrets
+  // devuelve la clave PGP en vez del secreto, con lo cual el header de
+  // autorizacion queda corrupto y pg_net tira "bad argument".
+  //
+  // El ON CONFLICT hace que el script se pueda correr las veces que haga falta.
+  const secretStatement = `
+INSERT INTO private.app_secrets (name, value)
+VALUES
+  ('SUPABASE_ANON_KEY', '${keys.anon}'),
+  ('SUPABASE_SERVICE_ROLE_KEY', '${keys.secret}')
+ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, created_at = now();`;
 
-  const sql = `${migration}\n\n${vaultStatement}\n`;
+  const sql = `${migration}\n${secretStatement}\n`;
   const result = await api("POST", `/projects/${PROJECT_REF}/database/query`, { query: sql });
   return Array.isArray(result) ? result.length : 0;
 }
@@ -144,7 +218,7 @@ async function verify() {
     {
       query: `SELECT
         (SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_list_activity_push') AS trigger_ok,
-        (SELECT count(*) FROM vault.decrypted_secrets WHERE name = 'SUPABASE_SERVICE_ROLE_KEY') AS vault_ok,
+        (SELECT count(*) FROM private.app_secrets WHERE name = 'SUPABASE_SERVICE_ROLE_KEY') AS vault_ok,
         (SELECT count(*) FROM pg_tables WHERE tablename = 'device_tokens') AS tabla_ok,
         (SELECT count(*) FROM pg_tables WHERE tablename = 'push_subscriptions') AS tabla_web_ok;`,
     }
@@ -155,31 +229,47 @@ async function verify() {
 // ---------------------------------------------------------------------------
 // 4) La Edge Function.
 // ---------------------------------------------------------------------------
+// Desplegar la Edge Function.
+//
+// Se usa el CLI de Supabase y no la Management API a proposito: los endpoints
+// de deploy de la API devolvian 404 para las tres variantes probadas, y el CLI
+// si funciona y ya sabe el endpoint correcto. Ademas el CLI esta autenticado
+// con el mismo token que la API, asi que no hace falta nada extra.
 async function deployFunction() {
-  const source = readFileSync(join(root, "supabase/functions/send-push/index.ts"), "utf8");
+  const cli = join(root, "node_modules", ".bin", process.platform === "win32" ? "supabase.cmd" : "supabase");
+  if (!existsSync(cli)) {
+    throw new Error("No se encontro el CLI de Supabase. Instalalo con: npm install --no-save supabase");
+  }
 
-  // La API de despliegue espera multipart/form-data.
-  const form = new FormData();
-  form.append("metadata", JSON.stringify({ import_map_path: null, entrypoint_path: null }));
-  form.append("body", new Blob([source]), "index.ts");
+  const result = spawnSync(
+    cli,
+    ["functions", "deploy", "send-push", "--project-ref", PROJECT_REF],
+    { cwd: root, encoding: "utf8", shell: process.platform === "win32" }
+  );
 
-  const response = await fetch(`${API}/projects/${PROJECT_REF}/functions/send-push/body`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body: form,
-  });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`${response.status} al desplegar: ${text.slice(0, 300)}`);
-  return text;
+  const output = `${result.stdout || ""}${result.stderr || ""}`;
+  if (result.status !== 0) {
+    throw new Error(`El deploy fallo:\n${output.slice(-600)}`);
+  }
+  if (!output.includes("Deployed Functions")) {
+    throw new Error(`El deploy no confirmo el despliegue:\n${output.slice(-600)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // 5) Secretos. VAPID siempre; Firebase solo si esta el archivo.
 // ---------------------------------------------------------------------------
-async function setSecrets() {
+async function setSecrets(keys) {
+  // OJO con los nombres: Supabase rechaza los secretos que empiezan con
+  // "SUPABASE_" porque ese prefijo lo usa para inyectar los suyos. Por eso
+  // los de VAPID van sin el.
+  //
+  // En cambio SUPABASE_SERVICE_ROLE_KEY si se puede: es un nombre reservado
+  // que la propia plataforma inyecta en la funcion, y por eso se usa para
+  // validar al que llama sin guardar una copia extra.
   const secrets = [
-    { name: "SUPABASE_VAPID_PRIVATE_KEY", value: VAPID_PRIVATE_KEY },
-    { name: "SUPABASE_VAPID_SUBJECT", value: "mailto:admin@superlist.app" },
+    { name: "VAPID_PRIVATE_KEY", value: VAPID_PRIVATE_KEY },
+    { name: "VAPID_SUBJECT", value: "mailto:admin@superlist.app" },
   ];
 
   // Firebase es opcional: sin esto el navegador anda y el APK no.
@@ -207,13 +297,13 @@ async function setSecrets() {
 async function main() {
   console.log(`Configurando las notificaciones de SuperList (${PROJECT_REF})...`);
 
-  step("1/5 Sacando la clave service_role del proyecto");
-  const serviceRoleKey = await getServiceRoleKey();
-  ok("Clave service_role obtenida (no se imprime ni se guarda en disco).");
+  step("1/5 Sacando las claves del proyecto");
+  const keys = await getApiKeys();
+  ok("Claves obtenidas (no se imprimen ni se guardan en disco).");
 
-  step("2/5 Corriendo la migracion y guardando la clave en el vault");
-  await runMigration(serviceRoleKey);
-  ok("Migracion aplicada y clave guardada en el vault.");
+  step("2/5 Corriendo la migracion y guardando las claves en private");
+  await runMigration(keys);
+  ok("Migracion aplicada y claves guardadas.");
 
   step("3/5 Verificando");
   const state = await verify();
@@ -228,15 +318,70 @@ async function main() {
   ok("Edge Function desplegada.");
 
   step("5/5 Guardando los secretos");
-  const names = await setSecrets();
+  const names = await setSecrets(keys);
   ok(`Secretos guardados: ${names.join(", ")}`);
 
-  console.log(`\nListo. La clave publica VAPID del cliente es:\n  ${VAPID_PUBLIC_KEY}`);
-  console.log("Y ya esta escrita en js/11-push.js.");
+  // Prueba de fuego: se inserta un producto real en una lista compartida con
+  // al menos dos miembros y se mira si la Edge Function respondio. Sin esto
+  // el script dira "Listo" sin haber comprobado nunca que nada funcione.
+  const shared = await api(
+    "POST",
+    `/projects/${PROJECT_REF}/database/query`,
+    {
+      query: `SELECT g.id FROM shopping_groups g
+        WHERE g.type = 'shared'
+          AND (SELECT count(*) FROM shopping_group_members m WHERE m.group_id = g.id) >= 2
+        LIMIT 1`,
+    }
+  );
+
+  if (!shared.length) {
+    console.log("\n   No hay ninguna lista compartida con 2 o mas miembros, asi que");
+    console.log("   no se puede probar el circuito. Compartir la lista con otra");
+    console.log("   cuenta y volver a correr este script.");
+    return;
+  }
+
+  const groupId = shared[0].id;
+  const testId = `setup-test-${Date.now()}`;
+
+  await api("POST", `/projects/${PROJECT_REF}/database/query`, {
+    query: `INSERT INTO shopping_products (id, group_id, name, category, status, added_by_name)
+            VALUES ('${testId}', '${groupId}', 'Producto de prueba', 'Otros', 'falta', 'Prueba')
+            RETURNING id`,
+  });
+  console.log(`   Se inserto "${testId}" en la lista compartida. Esperando la respuesta...`);
+
+  await new Promise((resolve) => setTimeout(resolve, 14000));
+
+  const response = await api(
+    "POST",
+    `/projects/${PROJECT_REF}/database/query`,
+    { query: "SELECT status_code, content, error_msg FROM net._http_response ORDER BY created DESC LIMIT 1" }
+  );
+
+  const last = response[0];
+  console.log(`   Respuesta de la Edge Function: HTTP ${last.status_code}`);
+  if (last.content) console.log(`   ${last.content}`);
+  if (last.error_msg) console.log(`   error de pg_net: ${last.error_msg}`);
+
+  if (last.status_code !== 200) {
+    console.log("\n   El circuito NO llego a funcionar. Mira los logs de la funcion en:");
+    console.log(`   https://supabase.com/dashboard/project/${PROJECT_REF}/logs`);
+  } else {
+    console.log("   El circuito completo funciona: trigger -> Edge Function -> respuesta.");
+  }
+
+  // Limpieza: el producto de prueba no debe quedar en la lista de la familia.
+  await api("POST", `/projects/${PROJECT_REF}/database/query`, {
+    query: `DELETE FROM shopping_products WHERE id = '${testId}'`,
+  });
+  console.log("   (el producto de prueba se borro)");
 }
 
 main().catch((error) => {
   console.error(`\nFALLO: ${error.message}`);
   process.exit(1);
 });
+
 

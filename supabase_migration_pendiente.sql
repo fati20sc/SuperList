@@ -233,8 +233,37 @@ END $$;
 --   Sin el paso 3 el trigger no manda nada, pero tampoco rompe la app.
 -- ==============================================================================
 
+-- pg_net hace la llamada HTTP en segundo plano.
 CREATE EXTENSION IF NOT EXISTS pg_net;
-CREATE EXTENSION IF NOT EXISTS vault WITH SCHEMA vault;
+
+
+-- ------------------------------------------------------------------------------
+-- Donde vive la clave de servicio.
+--
+-- Se probo usar el Vault de Supabase (supabase_vault) y en este proyecto NO
+-- SIRVE: la vista vault.decrypted_secrets devuelve la clave PGP del vault en
+-- lugar del secreto, y el header Authorization terminaba siendo basura, que
+-- pg_net reportaba como "A libcurl function was given a bad argument".
+--
+-- Por eso va en un esquema "private". PostgREST solo publica el esquema
+-- "public", asi que ni la clave anon ni la de un usuario llegan a esta tabla:
+-- no es alcanzable desde la API. Los permisos se niegan de forma explicita
+-- por si alguien amplia la exposicion en el futuro.
+--
+-- OJO: esta clave NO va en ningun archivo del repo. La escribe
+-- tools/setup-notificaciones.mjs, tomandola del servidor de Supabase.
+-- ------------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS private;
+
+CREATE TABLE IF NOT EXISTS private.app_secrets (
+    name TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+REVOKE ALL ON SCHEMA private FROM public, anon, authenticated;
+REVOKE ALL ON private.app_secrets FROM public, anon, authenticated;
+GRANT USAGE ON SCHEMA private TO service_role;
 
 
 -- ------------------------------------------------------------------------------
@@ -261,6 +290,7 @@ DECLARE
     v_new_status  TEXT;
     v_old_status  TEXT;
     v_service_key TEXT;
+    v_anon_key    TEXT;
     v_project_url TEXT := 'https://ismweucgziipplsnkwuh.supabase.co';
 BEGIN
     -- OJO, esto parece un detalle y no lo es: en un trigger DELETE el registro
@@ -296,18 +326,21 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- El service_role se lee del vault. Si todavia no esta guardado, no se
+    -- Las claves se leen de private.app_secrets. Si todavia no estan, no se
     -- intenta nada: es preferible no notificar a romper la escritura.
     BEGIN
-        SELECT secret INTO v_service_key
-        FROM vault.decrypted_secrets
+        SELECT value INTO v_service_key
+        FROM private.app_secrets
         WHERE name = 'SUPABASE_SERVICE_ROLE_KEY';
+        SELECT value INTO v_anon_key
+        FROM private.app_secrets
+        WHERE name = 'SUPABASE_ANON_KEY';
     EXCEPTION WHEN OTHERS THEN
         v_service_key := NULL;
     END;
 
-    IF v_service_key IS NULL THEN
-        RAISE WARNING 'SuperList: falta SUPABASE_SERVICE_ROLE_KEY en el vault.';
+    IF v_service_key IS NULL OR v_anon_key IS NULL THEN
+        RAISE WARNING 'SuperList: faltan las claves del proyecto en private.app_secrets.';
         RETURN NEW;
     END IF;
 
@@ -328,6 +361,10 @@ BEGIN
         url     := v_project_url || '/functions/v1/send-push',
         headers := jsonb_build_object(
             'Content-Type',  'application/json',
+            -- La clave publica va en "apikey" y el JWT con role service_role en
+            -- "Authorization". Con las dos en el mismo header la gateway
+            -- responde "Conflicting API keys".
+            'apikey',        v_anon_key,
             'Authorization', 'Bearer ' || v_service_key
         ),
         body    := jsonb_build_object(
@@ -353,26 +390,27 @@ CREATE TRIGGER trg_list_activity_push
 
 
 -- ------------------------------------------------------------------------------
--- ULTIMO PASO: corré esto UNA sola vez, en el SQL Editor, con tu clave real.
+-- ULTIMO PASO: esto lo hace tools/setup-notificaciones.mjs automaticamente.
+-- Si lo queres hacer a mano, es esto (con TU service_role):
 --
---   SELECT vault.create_secret(
---     'PEGA_AQUI_TU_SERVICE_ROLE_KEY',
---     'SUPABASE_SERVICE_ROLE_KEY',
---     'SuperList: clave de servicio para mandar notificaciones'
---   );
+--   INSERT INTO private.app_secrets (name, value)
+--   VALUES ('SUPABASE_SERVICE_ROLE_KEY', 'PEGA_AQUI_TU_SERVICE_ROLE_KEY')
+--   ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value;
 --
 -- Donde se consigue la clave: Supabase > Configuracion del proyecto >
 -- API > Claves anon / service_role. Es la que dice "service_role", NO la "anon".
 --
--- OJO: la service_role da acceso total a la base. Va en el vault de Supabase
--- (cifrado), nunca en el codigo ni en un commit.
+-- OJO: la service_role da acceso total a la base. Por eso vive en el esquema
+-- "private", al que PostgREST no expone, y nunca en el codigo ni en un commit.
 -- ------------------------------------------------------------------------------
 
--- Verificaciones. Cada una tiene que devolver 1 fila:
+-- Verificaciones. Cada una tiene que devolver 1:
 --
 --   SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_list_activity_push';
---   SELECT count(*) FROM vault.decrypted_secrets
+--   SELECT count(*) FROM private.app_secrets
 --     WHERE name = 'SUPABASE_SERVICE_ROLE_KEY';
+--   SELECT count(*) FROM pg_tables
+--     WHERE schemaname = 'private' AND tablename = 'app_secrets';
 --   SELECT count(*) FROM pg_tables WHERE tablename = 'device_tokens';
 --
 -- ==============================================================================

@@ -10,8 +10,10 @@
 //   1) Supabase > Edge Functions > New Function > ponele nombre "send-push"
 //   2) Pegá este código (cambiale la extensión a .ts si tu editor lo pide).
 //   3) Secrets > New Secret, dos veces:
-//        SUPABASE_VAPID_PRIVATE_KEY  = la clave privada VAPID
-//        SUPABASE_VAPID_SUBJECT      = "mailto:tu@email.com"
+//        VAPID_PRIVATE_KEY  = la clave privada VAPID
+//        VAPID_SUBJECT      = "mailto:tu@email.com"
+//      Ojo con el nombre: Supabase rechaza los secretos que empiezan con
+//      "SUPABASE_" porque ese prefijo lo reserva para los suyos.
 //   4) (Opcional, solo si querés que el APK también notifique)
 //        FIREBASE_PROJECT_ID  = el id del proyecto de Firebase
 //        FIREBASE_CLIENT_EMAIL = el service account de Firebase
@@ -42,8 +44,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import webpush from "https://esm.sh/web-push@3.6.7";
 
-const VAPID_SUBJECT = Deno.env.get("SUPABASE_VAPID_SUBJECT") || "mailto:admin@example.com";
-const VAPID_PRIVATE_KEY = Deno.env.get("SUPABASE_VAPID_PRIVATE_KEY");
+// OJO con los nombres: Supabase no deja llamar a un secreto con prefijo
+// "SUPABASE_" (lo reserva para los suyos), asi que estos van sin el.
+const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@example.com";
+const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY");
 // La clave pública va en el cliente (js/11-push.js). Se replica acá porque
 // web-push la necesita para armar la cabecera de autenticación del push.
 // Tiene que ser el mismo par de claves que la del cliente.
@@ -191,11 +195,15 @@ Deno.serve(async (req) => {
   }
 
   // Esta funcion no debe quedar abierta: sin este chequeo, cualquiera que
-  // conozca la URL podria mandar notificaciones a cualquier grupo. Se exige el
-  // service_role, que solo lo tienen los triggers de la base y el backend.
+  // conozca la URL podria mandar notificaciones a cualquier grupo.
+  //
+  // OJO con el header: con las claves nuevas de Supabase (sb_secret_) la clave
+  // va SOLO en "apikey". Si ademas se manda un "Authorization" con otra clave,
+  // la gateway responde "Conflicting API keys" antes de llegar aca. Por eso se
+  // valida contra "apikey" y no contra "Authorization".
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const authHeader = req.headers.get("Authorization") || "";
-  if (serviceRole && authHeader !== `Bearer ${serviceRole}`) {
+  const providedKey = req.headers.get("apikey") || "";
+  if (serviceRole && providedKey !== serviceRole) {
     return json({ error: "No autorizado" }, 401);
   }
 
