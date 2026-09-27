@@ -26,6 +26,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PROJECT_REF = "ismweucgziipplsnkwuh";
@@ -37,17 +38,27 @@ const VAPID_PUBLIC_KEY =
   "BPtAA8KmSpnIp7V6YSPp5w9Y7JOgju8S1XOewPY73_kjlZNFIxnh44ZhioDPUitDN6QMh_JOvsH19hww1rSc6uE";
 const VAPID_PRIVATE_KEY = "V03YQ4mL2MzqSuFG4V2gZfslHzRBg1Y7L4ejlrsTvgs";
 
-// El token se puede pasar de dos maneras, y las dos son validas:
-//   - variable de entorno SUPABASE_ACCESS_TOKEN
-//   - el archivo supabase-token.txt en la raiz del repo
-// Se prefiere el archivo porque asi el token no queda escrito en el historial
-// del chat ni en el comando. Ese archivo esta en el .gitignore.
+// De donde sale el token, en orden de prioridad:
+//
+//   1) El archivo supabase-token.txt en la raiz del repo.
+//   2) La variable de entorno SUPABASE_ACCESS_TOKEN.
+//   3) ~/.supabase/access-token, que es donde el CLI de Supabase guarda el
+//      token cuando uno hace "supabase login" y autoriza en el navegador.
+//
+// El punto 3 es el recomendado: no hay ningun secreto que copiar ni pegar,
+// asi que no se puede censurar ni quedar en el historial de nada.
 function readToken() {
   if (process.env.SUPABASE_ACCESS_TOKEN) return process.env.SUPABASE_ACCESS_TOKEN.trim();
 
-  const file = join(root, "supabase-token.txt");
-  if (existsSync(file)) {
-    const value = readFileSync(file, "utf8").trim();
+  const inRepo = join(root, "supabase-token.txt");
+  if (existsSync(inRepo)) {
+    const value = readFileSync(inRepo, "utf8").trim();
+    if (value) return value;
+  }
+
+  const fromCli = join(homedir(), ".supabase", "access-token");
+  if (existsSync(fromCli)) {
+    const value = readFileSync(fromCli, "utf8").trim();
     if (value) return value;
   }
 
@@ -58,11 +69,14 @@ const token = readToken();
 if (!token) {
   console.error("No encontre un token de Supabase.");
   console.error("");
-  console.error("Hacé una de estas dos:");
-  console.error("  1) Guardalo en el archivo supabase-token.txt (esta en el .gitignore)");
-  console.error("  2) O exportalo:  $env:SUPABASE_ACCESS_TOKEN = 'sbp_...'");
+  console.error("Lo mas simple es autorizar en el navegador, sin copiar nada:");
+  console.error("    npx supabase login");
   console.error("");
-  console.error("El token se crea en Supabase > Account Preferences > Personal Access Tokens.");
+  console.error("Eso abre el navegador, cliqueas Authorize y listo. El token queda");
+  console.error("guardado en ~/.supabase y este script lo toma de ahi solo.");
+  console.error("");
+  console.error("Alternativas: un archivo supabase-token.txt, o la variable");
+  console.error("SUPABASE_ACCESS_TOKEN.");
   process.exit(1);
 }
 
