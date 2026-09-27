@@ -16,15 +16,15 @@
       "purpose": "any"
     },
     {
-      "src": "./app-icon.png",
+      "src": "./app-icon.webp",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./app-icon.png",
+      "src": "./app-icon.webp",
       "sizes": "512x512",
-      "type": "image/png",
+      "type": "image/webp",
       "purpose": "maskable"
     }
   ]

@@ -4,13 +4,22 @@
   "private": true,
   "description": "SuperList - Lista de compras inteligente y compartida para la familia",
   "scripts": {
-    "test": "node tests/test_render_settings.js && node tests/test_invite_code.js && node tests/test_click_handler.js",
+    "build": "node tools/build.js",
+    "split": "node tools/split.js",
+    "headers": "node tools/add-headers.js",
+    "images": "node tools/optimize-images.js && node tools/switch-to-webp.js",
+    "test": "vitest run && node tests/test_render_settings.js && node tests/test_invite_code.js && node tests/test_click_handler.js",
     "audit": "node tests/audit.js",
     "serve": "node server.js"
   },
   "dependencies": {
-    "@capacitor/core": "^6.1.2",
     "@capacitor/android": "^6.1.2",
-    "@capacitor/cli": "^6.1.2"
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "sharp": "^0.35.4",
+    "vitest": "^5.0.2"
   }
 }

@@ -27,12 +27,32 @@ jobs:
         with:
           node-version: '22'
 
+      # app.js se genera concatenando los modulos de js/. Si alguien edito
+      # app.js a mano y no corro npm run build, esto avisa en vez de publicar
+      # un bundle desactualizado.
+      - name: Verificar que app.js esta sincronizado con js/
+        run: |
+          node tools/build.js
+          if ! git diff --quiet -- app.js; then
+            echo "::error::app.js no coincide con js/. Corré 'npm run build' y commiteá."
+            git diff --stat -- app.js
+            exit 1
+          fi
+
+      - name: Correr los tests
+        run: |
+          npm install --no-save --no-fund --no-audit vitest jsdom
+          npx vitest run
+          node tests/test_render_settings.js
+          node tests/test_invite_code.js
+          node tests/test_click_handler.js
+
       # La app principal vive en la raiz del repo.
       # Se arma www/ con los archivos estaticos de ahi.
       - name: Prepare web assets
         run: |
           mkdir -p www
-          cp index.html app.js styles.css sw.js manifest.json *.png *.jpg www/ 2>/dev/null || true
+          cp index.html app.js styles.css sw.js manifest.json *.webp *.png *.jpg www/ 2>/dev/null || true
 
       - name: Install dependencies
         run: |

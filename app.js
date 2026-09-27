@@ -1,3 +1,9 @@
+// =======================================================================
+// 00-header.js
+//
+// Constantes de la app, claves de storage y configuracion de Supabase.
+// Es el primer modulo: define cosas que usan todos los demas.
+// =======================================================================
 const APP_KEY = "superlist-state-v2";
 const SESSION_KEY = "superlist-session-v2";
 const GROUPS_TABLE = "shopping_groups";
@@ -46,6 +52,12 @@ const DARK_QUERY = "(prefers-color-scheme: dark)";
 const darkMediaQuery =
   typeof window.matchMedia === "function" ? window.matchMedia(DARK_QUERY) : null;
 
+// =======================================================================
+// 01-theme.js
+//
+// Sistema de temas y paletas.
+// Modos claro/oscuro/auto, paletas por nombre, y el selector de tema.
+// =======================================================================
 function readStoredThemeMode() {
   try {
     const value = localStorage.getItem(THEME_MODE_KEY);
@@ -216,6 +228,12 @@ const PRODUCTION_URL = "https://fati20sc.github.io/SuperList/";
 let cachedSupabaseUser = null;
 
 // Sistema de notificaciones
+// =======================================================================
+// 02-notifications.js
+//
+// Notificaciones internas de las listas compartidas.
+// Avisos en pantalla, historial, y el puente con Supabase Realtime.
+// =======================================================================
 function showNotification(message, type = "info") {
   const notification = document.createElement("div");
   notification.className = "notification";
@@ -528,6 +546,12 @@ const INITIAL_CATEGORIES = [
   "Otros",
 ];
 
+// =======================================================================
+// 03-state-and-dialogs.js
+//
+// Estado global, referencias al DOM, menu lateral y dialogos.
+// Guarda el estado en memoria y engancha los formularios de index.html.
+// =======================================================================
 let state = loadState();
 let session = loadSession();
 let isDataLoading = false;
@@ -1116,6 +1140,12 @@ syncChannel?.addEventListener("message", async (event) => {
   render();
 });
 
+// =======================================================================
+// 04-data-and-supabase.js
+//
+// Persistencia y acceso a Supabase.
+// Carga de datos, mapeo entre filas y objetos, y la suscripcion Realtime.
+// =======================================================================
 function loadState() {
   return { users: [], groups: [], notifications: loadStoredNotifications(), joinRequests: [], uiNotice: "" };
 }
@@ -1598,6 +1628,12 @@ async function refreshCurrentUser() {
   // Actualizar la caché
   const supabaseUser = supabaseSession.user;
   let profileName = supabaseUser.user_metadata?.name || null;
+// =======================================================================
+// 05-utils.js
+//
+// Utilidades puras: escape, formato de fechas, emojis y codigos.
+// Sin efectos secundarios: se pueden usar y probar aisladas.
+// =======================================================================
   let profileBirthdate = supabaseUser.user_metadata?.birthdate || null;
 
   try {
@@ -1803,6 +1839,11 @@ function openEmojiPicker(input) {
   }, 0);
 }
 
+// =======================================================================
+// 06-auth.js
+//
+// Autenticacion: crear cuenta, iniciar sesion y cerrar sesion.
+// =======================================================================
 function createInviteCode() {
   return Math.random().toString(36).slice(2, 6).toUpperCase() + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
@@ -1874,6 +1915,12 @@ async function signOut() {
   render();
 }
 
+// =======================================================================
+// 07-groups.js
+//
+// Listas compartidas: crear, editar, solicitar ingreso y miembros.
+// Incluye el flujo de aprobacion: el admin acepta o rechaza solicitudes.
+// =======================================================================
 async function createGroup(name, emoji = "🏠", options = {}) {
   const user = currentUser();
   if (!user) return;
@@ -2067,6 +2114,11 @@ function memberRole(group = getCurrentGroup()) {
   return group?.members.find((member) => member.userId === user?.id)?.role || "member";
 }
 
+// =======================================================================
+// 08-products.js
+//
+// Productos: alta, edicion, estados, cantidades y marcado como comprado.
+// =======================================================================
 async function upsertProduct(product) {
   const group = getCurrentGroup();
   if (!group) return;
@@ -2296,13 +2348,19 @@ function syncCategoryChips() {
   });
 }
 
+// =======================================================================
+// 09-views.js
+//
+// Todas las vistas (funciones render) y sus plantillas HTML.
+// Es el modulo mas grande: cada render dibuja una pantalla completa en #app.
+// =======================================================================
 function renderPasswordReset() {
   groupSwitcher.innerHTML = "";
   app.innerHTML = `
     <section class="auth-layout">
       <div class="hero-band auth-hero">
-        <img class="auth-brand-mark" src="./superlist.png" alt="Superlist" />
-        <img class="hero-illustration" src="./logo.png" alt="Logo de SuperList" />
+        <img class="auth-brand-mark" src="./superlist.webp" alt="Superlist" />
+        <img class="hero-illustration" src="./logo.webp" alt="Logo de SuperList" />
         <div>
           <h2>Cambiá tu contraseña</h2>
           <p>Ingresá tu nueva contraseña para continuar.</p>
@@ -2502,8 +2560,8 @@ function renderAuth() {
   app.innerHTML = `
     <section class="auth-layout">
       <div class="hero-band auth-hero">
-        <img class="auth-brand-mark" src="./superlist.png" alt="Superlist" />
-        <img class="hero-illustration" src="./logo.png" alt="Logo de SuperList" />
+        <img class="auth-brand-mark" src="./superlist.webp" alt="Superlist" />
+        <img class="hero-illustration" src="./logo.webp" alt="Logo de SuperList" />
         <div>
           <h2>Entrá a tu lista digital.</h2>
           <p>Una app diseñada para que puedas organizar tus compras.</p>
@@ -2998,7 +3056,7 @@ function renderLists() {
             <p class="eyebrow">Mis listas</p>
             <h2>Gestioná tus listas</h2>
           </div>
-          <img class="lists-illustration" src="./SUPERMERCADO.png" alt="Supermercado" />
+          <img class="lists-illustration" src="./SUPERMERCADO.webp" alt="Supermercado" />
           <div class="product-list lists-state">
             ${empty("Todavía no tenés listas. Creá la primera o unite con un código.")}
           </div>
@@ -3048,7 +3106,7 @@ function renderLists() {
           <p class="eyebrow">Mis listas</p>
           <h2>Gestioná tus listas</h2>
         </div>
-        <img class="lists-illustration" src="./SUPERMERCADO.png" alt="Supermercado" />
+        <img class="lists-illustration" src="./SUPERMERCADO.webp" alt="Supermercado" />
         <div class="product-list lists-state">
           ${groups.length ? groups.map((group) => `
             <article class="product-card list-card ${session.groupId === group.id ? "active" : ""}">
@@ -3950,6 +4008,12 @@ supabaseClient.auth.onAuthStateChange(async (event, currentSession) => {
   }
 });
 
+// =======================================================================
+// 10-boot.js
+//
+// Arranque: registro del service worker e inicializacion de la app.
+// Va ultimo porque se ejecuta cuando todo lo demas ya esta definido.
+// =======================================================================
 // ==============================================================================
 // Registro de Service Worker para PWA (Instalable en móviles y desktop)
 // ==============================================================================

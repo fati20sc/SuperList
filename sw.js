@@ -1,15 +1,15 @@
-const CACHE_NAME = "superlist-v12";
+const CACHE_NAME = "superlist-v13";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=13",
-  "./app.js?v=13",
-  "./app-icon.png",
+  "./styles.css?v=14",
+  "./app.js?v=14",
+  "./app-icon.webp",
   "./app-icon-192.png",
-  "./logo.png",
-  "./logo-512.png",
-  "./SUPERMERCADO.png",
-  "./superlist.png",
+  "./logo.webp",
+  "./logo-512.webp",
+  "./SUPERMERCADO.webp",
+  "./superlist.webp",
   "./pensando.jpg",
   "./manifest.json",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"

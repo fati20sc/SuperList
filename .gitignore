@@ -2,3 +2,25 @@ node_modules/
 outputs/mi-casa/node_modules/
 .DS_Store
 
+# Temporales de herramientas y pruebas
+_app_backup.js
+_app_buggy.js
+_app_old.js
+_app_good.js
+_out.txt
+check_out.txt
+_probe.txt
+_g.txt
+_v.txt
+_f.txt
+_p.txt
+_r.txt
+_s.txt
+_s2.txt
+_t.txt
+_i.txt
+_a.txt
+_c.txt
+_b.txt
+_d.txt
+
