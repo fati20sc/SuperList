@@ -1271,6 +1271,13 @@ h3 {
   font-size: 0.8rem;
 }
 
+.invite-box-list {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
 .remove-member-button {
   min-width: 72px;
 }
